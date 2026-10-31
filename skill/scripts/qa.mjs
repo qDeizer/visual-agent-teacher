@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Test a built lab in a headless browser.
-//   node qa.mjs path/to/lab.html [--shots] [--no-verify]
+//   node qa.mjs path/to/lab.html [--sheet] [--shots] [--no-verify]
 // Checks: runtime errors, model checks, "watching a step == jumping to it" (all detail levels),
 // layout problems (overlapping/clipped/tiny text, NaN), real playback. Writes qa-report.json next to the HTML
-// and, with --shots, one screenshot per stop (normal detail) into qa-shots/.
+// and, with --shots, one screenshot per stop (normal detail) into qa-shots/; with --sheet also contact sheets\n// (6 stops per image) into qa-sheets/ — review those instead of single shots when images are limited.
 // Exit code 0 = no errors; 1 = errors (each message names the step id and what is wrong).
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -16,6 +16,7 @@ if (!file) { console.error('Usage: node qa.mjs <lab.html> [--shots] [--no-verify
 const html = resolve(file)
 if (!existsSync(html)) { console.error(`✗ Not found: ${html}`); process.exit(1) }
 const shots = args.includes('--shots')
+const sheet = args.includes('--sheet')
 const outDir = dirname(html)
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
@@ -56,7 +57,7 @@ try {
       for (let k = 0; k < 60; k++) { await sleep(100); idx = await b.eval(`(document.querySelector('.count').textContent.match(/(\\d+)\\s*\\//) || [])[1]`); if (await b.eval(`!document.querySelector('.next').classList.contains('playing')`)) break }
       if (Number(idx) !== i + 1) { report.errors.push(`Playback: after pressing Continue ${i} time(s) the counter shows step ${idx}, expected ${i + 1}.`); break }
     }
-    if (shots) {
+    if (shots || sheet) {
       const dir = join(outDir, 'qa-shots')
       mkdirSync(dir, { recursive: true })
       const stops = await b.eval('window.__vat.go(0, 2), window.__vat.stops()')
@@ -66,6 +67,26 @@ try {
         const name = `stop-${String(i + 1).padStart(2, '0')}-${stops[i].id.replace(/[^\w-]/g, '_')}.png`
         writeFileSync(join(dir, name), await b.screenshot())
         report.shots.push(join('qa-shots', name))
+      }
+      if (sheet) {
+        // contact sheets: 6 stops per image (3 × 2), so a model with an image limit can review the whole lesson
+        const sdir = join(outDir, 'qa-sheets')
+        mkdirSync(sdir, { recursive: true })
+        const per = 6, tileW = 466, tileH = Math.round(tileW * 900 / 1440), capH = 26
+        for (let s = 0; s * per < report.shots.length; s++) {
+          const tiles = report.shots.slice(s * per, s * per + per).map((p, k) => {
+            const i = s * per + k
+            return `<figure><figcaption>${i + 1}/${stops.length} · ${stops[i].id}</figcaption><img src="${pathToFileURL(join(outDir, p)).href}"></figure>`
+          }).join('')
+          const page = join(sdir, `_sheet-${s + 1}.html`)
+          writeFileSync(page, `<!doctype html><meta charset=utf-8><style>body{margin:0;padding:8px;background:#fff;font:600 15px system-ui;display:grid;grid-template-columns:repeat(3,${tileW}px);gap:8px}figure{margin:0}figcaption{height:${capH - 4}px}img{width:${tileW}px;height:${tileH}px;border:1px solid #ccd;display:block}</style>${tiles}`)
+          await b.goto(pathToFileURL(page).href)
+          await sleep(150)
+          const rows = Math.ceil(Math.min(per, report.shots.length - s * per) / 3)
+          const name = `sheet-${s + 1}.png`
+          writeFileSync(join(sdir, name), await b.screenshot({ x: 0, y: 0, width: 3 * tileW + 32, height: rows * (tileH + capH + 8) + 16 }))
+          report.sheets = [...(report.sheets || []), join('qa-sheets', name)]
+        }
       }
     }
   }
@@ -85,4 +106,4 @@ if (report.errors.length) {
   console.log(`\nFull report: ${join(outDir, 'qa-report.json')}`)
   process.exit(1)
 }
-console.log(`\n✓ QA passed${shots ? ` — ${report.shots.length} screenshots in ${join(outDir, 'qa-shots')}` : ''}. Full report: ${join(outDir, 'qa-report.json')}`)
+console.log(`\n✓ QA passed${report.sheets ? ` — ${report.sheets.length} contact sheet(s) (6 steps each) in ${join(outDir, 'qa-sheets')}` : shots ? ` — ${report.shots.length} screenshots in ${join(outDir, 'qa-shots')}` : ''}. Full report: ${join(outDir, 'qa-report.json')}`)

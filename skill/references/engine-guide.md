@@ -90,6 +90,22 @@ lesson.chapter('hidden', 'Gizli katman', s => {              // chapter = level 
 - Keep ≤ ~5 labelled things in view at once. Use `dim`, `hide` and the camera to declutter.
 - The formula bar lives below the stage; one formula at a time.
 
+## 5b. Component notes
+
+**neuralNet** lays out columns of neurons (left → right) inside its region. Parts: `node(id)` (circle, kind `net-node`),
+`nodeValue(id)` (the number inside), `edge(a, b)`, `weight(a, b)` (chip on the edge, hidden unless `weights: 'always'`),
+`bias(id)` (small badge at the neuron's lower right). Default ids: `x1 x2 …`, `h1 h2 …` (one hidden layer) or
+`h1_1 h1_2 … h2_1 …` (several), `y1 …`. Two common bias conventions:
+- *b per neuron* (z = Σ w·x + b): keep `bias: true` (default) and give `values.biases`.
+- *bias input x0 = −1 with weight θ0* (z = θ0·(−1) + Σ θ·x): set `bias: false`, add `x0` as the first input
+  (`ids: [['x0','x1','x2'], …]`, `values.inputs.x0 = -1`) so its weights appear on edges like the others.
+Large nets: prefer `weights: 'on-focus'` and show only the weights of the neuron you are explaining.
+
+**plot** maps domain coordinates into its region; `curve(f)` draws in when created inside a step; `point(..., { draggable:
+{ inputX: 'x' } })` lets the learner drag and the whole lesson recomputes with the new input.
+
+**sequence** stacks messages top-down in call order; **stateMachine** switches to a vertical layout when labels need room.
+
 ## 6. Camera
 
 The camera changes the view, never the objects: `stage.camera.focus(obj | selection)`, `.frame('left' | selection)`,
@@ -108,9 +124,9 @@ cell), then `reset()`. Labels grow only a little when zoomed (`damped`); `minZoo
    what moves on screen in each step, practice tasks.
 2. Write `lesson.js`.
 3. `node <skill>/scripts/build.mjs lesson.js` → fix every error (messages say what to do) → repeat.
-4. `node <skill>/scripts/qa.mjs lab.html --shots` → fix every error (overlaps, clipped text, play-vs-jump differences) → repeat.
-5. Look at a few screenshots in `qa-shots/` if you can view images: is the subject obvious, is anything cramped, ugly or
-   confusing? Fix and rebuild.
+4. `node <skill>/scripts/qa.mjs lab.html --sheet` → fix every error (overlaps, clipped text, play-vs-jump differences) → repeat.
+5. If you can view images, look at the contact sheets in `qa-sheets/` (6 steps per image): is the subject obvious, is
+   anything cramped, ugly or confusing? Fix and rebuild. Image budget: at most 8 images for the whole task.
 6. Deliver the path to `lab.html`.
 
 ## 9. Escape hatches (only when the API cannot express it)

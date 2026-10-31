@@ -32,10 +32,11 @@ or layout math: you describe *what* the learner sees and hears, step by step, wi
    (prefer the user's course/textbook example when given); what moves on screen in each step; practice tasks.
 2. **Write** `lesson.js` in the output folder (default: a new folder named after the topic in the current directory).
 3. **Build**: `node <this skill's directory>/scripts/build.mjs <folder>/lesson.js` → fix all errors → repeat until it passes.
-4. **Test**: `node <this skill's directory>/scripts/qa.mjs <folder>/lab.html --shots` → fix all errors → repeat until it passes.
+4. **Test**: `node <this skill's directory>/scripts/qa.mjs <folder>/lab.html --sheet` → fix all errors → repeat until it passes.
    Requires Node ≥ 22 and Edge or Chrome (set `VAT_BROWSER` to the browser path if it is not found).
-5. **Look**: if you can view images, open 3–5 screenshots in `<folder>/qa-shots/` (start, a busy middle step, the result).
-   Fix anything cramped, cluttered, unclear or ugly; rebuild and re-test.
+5. **Look**: if you can view images, open the contact sheets in `<folder>/qa-sheets/` (each shows 6 steps). Fix anything
+   cramped, cluttered, unclear or ugly; rebuild and re-test. **Image budget: view at most 8 images in the whole task**
+   (some providers reject requests with more than 16 images). Prefer sheets over single shots in `qa-shots/`.
 6. **Deliver**: give the user the path to `lab.html` and one sentence on how to use it (Continue/Back, detail levels,
    Tinker, Practice).
 

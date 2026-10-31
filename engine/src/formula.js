@@ -183,6 +183,7 @@ export class FormulaBar {
     let words = null, ww = 0
     if (o.words) {
       words = svg('text', { class: 'fm-words', 'text-anchor': 'middle', 'font-size': 19 }, g)
+      this._ctx.handTyped?.(o.words, 'formula words')
       words.textContent = st._plain(o.words)
       ww = st.measureText(words.textContent, 19, 450)
     }

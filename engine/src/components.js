@@ -237,7 +237,7 @@ export function neuralNet(st, spec = {}) {
     e._flowEl = line
     edges.set(wKey(a, b), e)
     // weight chip: spread along edge by target index to avoid collisions
-    const t = 0.28 + 0.44 * (ids[i + 1].length > 1 ? (ids[i].indexOf(a) + bi) % 3 / 2 : 0.5)
+    const t = ids[i + 1].length > 1 ? 0.2 + 0.16 * (bi % 3) : 0.3
     const wv = vals.weights?.[wKey(a, b)] ?? vals.weights?.[`${a}-${b}`]
     const str = wv !== undefined ? st._valText(wv) : 'w'
     const ww = st.measureText(str, FONT.sm, 650) + 14

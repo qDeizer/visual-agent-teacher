@@ -35,6 +35,15 @@ export function compileLesson(def, root, { inputs: inputOverrides = {}, verbs, c
   const ids = new Set()
   const memory = []
   const termUse = []
+  // numbers typed by hand into text go stale when the learner changes inputs, and "0.4" is wrong in Turkish
+  const comma = /^(tr|de|fr|es|it|pt|ru|nl|pl|az)/i.test(lang)
+  const handTyped = (text, where) => {
+    const plain = String(text).replace(/\{\{[^}]*\}\}|\[\[[^\]]*\]\]/g, '')
+    const m = plain.match(comma ? /\d\.\d/ : /\d,\d/)
+    const src = String(text), at = src.indexOf(m?.[0])
+    if (m) warnings.push(`${where}: "…${src.slice(Math.max(0, at - 16), at + 18)}…" has a hand-typed decimal. Use {{valId}} (model values follow input changes and use the lesson's decimal separator).`)
+  }
+  ctx.handTyped = handTyped
   const newNode = (id, title, level, parent) => {
     if (typeof id !== 'string' || !id) throw new VatError(`Step ids must be non-empty strings.`)
     if (ids.has(id)) throw new VatError(`Step id '${id}' is used twice. Every chapter/step needs a unique id.`)
@@ -50,6 +59,7 @@ export function compileLesson(def, root, { inputs: inputOverrides = {}, verbs, c
         ctx.markup.check(text)
         node.say.push(text)
         termUse.push({ node, terms: ctx.markup.terms(text) })
+        handTyped(text, `step '${node.id}'`)
       },
       step(id, opts, build) {
         if (typeof opts === 'function') { build = opts; opts = {} }

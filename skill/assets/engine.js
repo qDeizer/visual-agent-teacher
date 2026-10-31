@@ -1710,7 +1710,7 @@
       e._paints.push({ el: line, attr: "stroke", variant: "main" });
       e._flowEl = line;
       edges.set(wKey(a, b), e);
-      const t = 0.28 + 0.44 * (ids[i + 1].length > 1 ? (ids[i].indexOf(a) + bi) % 3 / 2 : 0.5);
+      const t = ids[i + 1].length > 1 ? 0.2 + 0.16 * (bi % 3) : 0.3;
       const wv = vals.weights?.[wKey(a, b)] ?? vals.weights?.[`${a}-${b}`];
       const str = wv !== void 0 ? st._valText(wv) : "w";
       const ww = st.measureText(str, FONT.sm, 650) + 14;
@@ -2525,6 +2525,7 @@
       let words = null, ww = 0;
       if (o.words) {
         words = svg("text", { class: "fm-words", "text-anchor": "middle", "font-size": 19 }, g);
+        this._ctx.handTyped?.(o.words, "formula words");
         words.textContent = st._plain(o.words);
         ww = st.measureText(words.textContent, 19, 450);
       }
@@ -2914,6 +2915,14 @@
     const ids = /* @__PURE__ */ new Set();
     const memory = [];
     const termUse = [];
+    const comma = /^(tr|de|fr|es|it|pt|ru|nl|pl|az)/i.test(lang);
+    const handTyped = (text, where) => {
+      const plain = String(text).replace(/\{\{[^}]*\}\}|\[\[[^\]]*\]\]/g, "");
+      const m = plain.match(comma ? /\d\.\d/ : /\d,\d/);
+      const src = String(text), at = src.indexOf(m?.[0]);
+      if (m) warnings.push(`${where}: "…${src.slice(Math.max(0, at - 16), at + 18)}…" has a hand-typed decimal. Use {{valId}} (model values follow input changes and use the lesson's decimal separator).`);
+    };
+    ctx.handTyped = handTyped;
     const newNode = (id, title, level, parent) => {
       if (typeof id !== "string" || !id) throw new VatError(`Step ids must be non-empty strings.`);
       if (ids.has(id)) throw new VatError(`Step id '${id}' is used twice. Every chapter/step needs a unique id.`);
@@ -2929,6 +2938,7 @@
           ctx.markup.check(text);
           node.say.push(text);
           termUse.push({ node, terms: ctx.markup.terms(text) });
+          handTyped(text, `step '${node.id}'`);
         },
         step(id, opts, build) {
           if (typeof opts === "function") {
