@@ -1,4 +1,4 @@
-# Visual Teacher Agent
+# Visual Agent Teacher
 
 Herhangi bir konuyu — makine öğrenmesi, bilgisayar ağları, fizik, istatistik, biyoloji, kodlama, sistem mimarisi — **etkileşimli, görsel ve adım adım ilerleyen bir öğrenme laboratuvarına** dönüştüren bir AI ajan skill'i ve onun çalıştığı ortam.
 
