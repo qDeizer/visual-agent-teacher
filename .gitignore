@@ -13,3 +13,7 @@ playground/**/qa-report.json
 spikes/**/node_modules/
 spikes/**/package-lock.json
 
+
+# third-party skills kept locally only (not ours to redistribute)
+research/claude-skills/
+
