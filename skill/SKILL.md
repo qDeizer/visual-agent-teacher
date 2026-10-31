@@ -14,6 +14,10 @@ or layout math: you describe *what* the learner sees and hears, step by step, wi
 2. `references/example-lesson.js` — a complete small lesson (copy its structure, not its topic).
 3. `references/engine-api.d.ts` — the exact API. Use only what it declares.
 
+**Do not read `assets/engine.js`** (it is large, internal and costly to read). The three files above describe all the
+behaviour you need. When unsure how something behaves, write it, run the build and QA, and read their messages — they
+name the problem and the fix. Start writing `lesson.js` soon; iterate with the tools rather than studying internals.
+
 ## Non-negotiable rules
 
 - What and why before how. Zero prior knowledge: every term in the glossary, introduced with `[[term]]` before use.

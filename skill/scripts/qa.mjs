@@ -34,10 +34,10 @@ try {
     for (const c of checks) if (!c.ok) report.errors.push(`Check failed: ${c.message}`)
     for (const w of await b.eval('window.__vat.warnings')) report.warnings.push(w)
     report.info = await b.eval('window.__vat.info()')
-    if (!args.includes('--no-verify')) for (const L of [1, 2, 3]) {
+    if (!args.includes('--no-verify')) for (const L of [3]) {
       const v = await b.eval(`window.__vat.verify(${L})`, { timeout: 180000 })
       report.verify[L] = v
-      for (const p of v.problems) report.errors.push(`Detail ${L}, step '${p.stop}': ${p.kind === 'play-vs-jump' ? 'watching the animation and jumping to this step give different results' : 'jumping backward to this step differs from jumping forward'}:\n      ${p.details.join('\n      ')}`)
+      for (const p of v.problems) report.errors.push(`Step '${p.stop}': ${p.kind === 'play-vs-jump' ? 'watching the animation and jumping to this step give different results' : 'jumping backward to this step differs from jumping forward'}:\n      ${p.details.join('\n      ')}`)
     }
     report.layout = await b.eval('window.__vat.layout(2)', { timeout: 180000 })
     for (const x of report.layout) {
@@ -51,10 +51,11 @@ try {
     // real playback of the first stops (catches problems that seeking hides)
     await b.eval('window.__vat.go(0, 2)')
     await b.eval(`document.querySelector('.speed input').value = 2.5; document.querySelector('.speed input').dispatchEvent(new Event('input'))`)
+    const NEXT = `document.querySelector('[data-nav="3"][data-dir="1"]')`
     for (let i = 1; i <= Math.min(4, report.info.levels[2].stops - 1); i++) {
-      await b.eval(`document.querySelector('.next').click()`)
+      await b.eval(`${NEXT}.click()`)
       let idx = -1
-      for (let k = 0; k < 60; k++) { await sleep(100); idx = await b.eval(`(document.querySelector('.count').textContent.match(/(\\d+)\\s*\\//) || [])[1]`); if (await b.eval(`!document.querySelector('.next').classList.contains('playing')`)) break }
+      for (let k = 0; k < 60; k++) { await sleep(100); idx = await b.eval(`(document.querySelector('.count').textContent.match(/(\\d+)\\s*\\//) || [])[1]`); if (await b.eval(`!document.querySelector('.nav').classList.contains('playing')`)) break }
       if (Number(idx) !== i + 1) { report.errors.push(`Playback: after pressing Continue ${i} time(s) the counter shows step ${idx}, expected ${i + 1}.`); break }
     }
     if (shots || sheet) {
@@ -97,7 +98,7 @@ try {
 
 writeFileSync(join(outDir, 'qa-report.json'), JSON.stringify(report, null, 2))
 const i = report.info
-if (i) console.log(`Lesson: ${i.title} — ${i.objects} objects; stops: overview ${i.levels[1].stops}, normal ${i.levels[2].stops}, micro ${i.levels[3].stops}; normal detail plays ${i.levels[2].seconds}s at 1×`)
+if (i) console.log(`Lesson: ${i.title} — ${i.objects} objects; ${i.levels[1].stops} chapters, ${i.levels[2].stops} steps, ${i.levels[3].stops} micro stops; plays ${i.levels[3].seconds}s at 1×`)
 if (report.warnings.length) { console.log(`\n⚠ ${report.warnings.length} warning(s):`); report.warnings.forEach(w => console.log(`  - ${w}`)) }
 if (report.errors.length) {
   console.log(`\n✗ QA failed with ${report.errors.length} error(s):`)

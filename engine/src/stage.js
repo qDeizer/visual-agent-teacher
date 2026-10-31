@@ -21,7 +21,7 @@ export const GAPS = { xs: 6, sm: 14, md: 28, lg: 56 }
 // objects whose text IS a value: a number flying onto them replaces their text
 const VALUE_KINDS = new Set(['value', 'table-cell', 'grid-cell', 'net-value', 'net-weight', 'net-bias', 'code-watch'])
 const BUILTIN_KINDS = new Set(['table', 'table-cell', 'table-header', 'plot', 'plot-point', 'plot-curve', 'plot-line', 'plot-segment', 'plot-circle', 'plot-region', 'neuralNet', 'net-node', 'net-edge', 'net-weight', 'net-value', 'net-bias', 'graph', 'graph-node', 'graph-edge', 'grid', 'grid-cell', 'grid-window', 'numberLine', 'line-mark', 'line-interval', 'sequence', 'seq-actor', 'seq-message', 'seq-note', 'stateMachine', 'sm-state', 'sm-transition', 'sm-marker', 'codeView', 'code-line', 'code-cursor', 'code-watch', 'container', 'label', 'value', 'box', 'dot', 'arrow', 'counter', 'part', 'magnifier', 'panel'])
-export const FONT = { sm: 17, md: 21, lg: 27, xl: 36 }
+export const FONT = { sm: 21, md: 26, lg: 33, xl: 44 }
 const DEFAULT_CAM = { x: 0, y: 0, w: WORLD.w, h: WORLD.h }
 
 export class Stage {

@@ -135,9 +135,11 @@ export function qaApi(player) {
     get warnings() { return player.compiled?.warnings || [] },
     get checks() { return player.checks },
     info() {
+      const st = player.lay.stops
+      const units = L => new Set(st.map(s => s.unit[L])).size
       const out = { title: player.def.meta?.title, compileMs: Math.round(player.compileMs || 0), objects: player.compiled?.stage._order.length, levels: {} }
-      for (const L of [1, 2, 3]) { player.setLevel(L); out.levels[L] = { stops: player.lay.stops.length, seconds: Math.round(player.lay.duration * 10) / 10 } }
-      player.setLevel(2); player.jump(0)
+      for (const L of [1, 2, 3]) out.levels[L] = { stops: units(L), seconds: Math.round(player.lay.duration / 0.5 * 10) / 10 }
+      player.jump(0)
       return out
     },
     stops: () => player.lay.stops.map(s => ({ id: s.id, chapter: s.chapter, level: s.level, say: s.say })),
