@@ -54,7 +54,16 @@ try {
   if ($Stream) {
     if (-not $OutFile) { throw '-Stream için OutFile gerekli' }
     # Satırlar geldikçe dosyaya yazılır; ajan çalışırken dosya okunabilir
-    $Prompt | claude @cliArgs --output-format stream-json --verbose 2>$errFile | ForEach-Object { Add-Content -Path $OutFile -Value $_ -Encoding utf8NoBOM; $_ } | Select-Object -Last 1
+    # one writer for the whole run, shared for reading (others may watch the file while the agent works)
+    $fs = [System.IO.File]::Open($OutFile, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
+    $sw = [System.IO.StreamWriter]::new($fs, [System.Text.UTF8Encoding]::new($false))
+    $sw.AutoFlush = $true
+    try {
+      $Prompt | claude @cliArgs --output-format stream-json --verbose 2>$errFile | ForEach-Object {
+        try { $sw.WriteLine($_) } catch { }   # never let logging kill the agent
+        $_
+      } | Select-Object -Last 1
+    } finally { $sw.Dispose() }
     return
   }
   $out = $Prompt | claude @cliArgs --output-format json 2>$errFile
