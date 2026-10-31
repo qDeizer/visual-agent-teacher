@@ -71,6 +71,6 @@ Makinenin kontrol edebileceği istekler QA betiğinde zorunlu kurala dönüşür
 4. Detay seviyesi ve hız ayarları gerçekten etki eder (adım sayısı / animasyon süresi değişir).
 5. Formüldeki her sembolün bir açıklaması vardır.
 6. Ders dışarıdan hiçbir kaynak yüklemez; internetsiz çalışır.
-7. Ders sırasında öğrenciye soru/tahmin girişi açılmaz; giriş alanları yalnız alıştırma bölümündedir.
+7. Ders akışı hiçbir zaman öğrencinin bir şey girmesine bağlı değildir ve anlatım öğrenciye tahmin ya da cevap sorusu sormaz. Kurcalama kontrolleri (kaydırıcı, sürükleme, seçim) derste serbesttir ama isteğe bağlıdır. Cevap alanları yalnız alıştırma bölümündedir.
 
 Güzellik, anlaşılırlık ve anlatım kalitesi otomatik test edilmez; tasarım inceleme ajanı ve kullanıcı değerlendirir. Matematik doğruluğu şimdilik director kontrolündedir; tekrar eden hatalar çıkarsa konuya özel bağımsız hesap kontrolü eklenir.

@@ -1,0 +1,16 @@
+{
+  "name": "visual-agent-teacher",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build:engine": "node engine/build-engine.mjs",
+    "lesson": "node skill/scripts/build.mjs",
+    "qa": "node skill/scripts/qa.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12",
+    "gsap": "^3.15.0",
+    "typescript": "^5.9.3"
+  }
+}

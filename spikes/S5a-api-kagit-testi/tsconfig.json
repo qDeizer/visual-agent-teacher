@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "allowJs": true, "checkJs": true, "noEmit": true, "strict": true, "noImplicitAny": false, "target": "ES2022", "module": "ES2022", "lib": ["ES2022", "DOM"], "skipLibCheck": false },
+  "include": ["api/engine-api.d.ts", "example/lesson.js"]
+}

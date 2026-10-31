@@ -5,3 +5,11 @@ Thumbs.db
 runs/**/screenshots/
 runs/**/frames/
 .env
+
+# build outputs
+playground/**/lab.html
+playground/**/qa-shots/
+playground/**/qa-report.json
+spikes/**/node_modules/
+spikes/**/package-lock.json
+
