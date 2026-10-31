@@ -3,6 +3,7 @@
 // \le \ge \neq \approx \to \infty \sum \prod \log \ln \exp \sin \cos \max \min, \left( \right), \, \; \quad.
 import { VatError } from './util.js'
 import { rec, svg, T, DUR } from './core.js'
+import { M, EASE } from './motion.js'
 import { ROOT, WORLD } from './stage.js'
 
 const SYM = {
@@ -227,9 +228,12 @@ export class FormulaBar {
     s.filled = text
     rec.par(() => {
       if (from === null) {
-        rec.tw(s.sym, { opacity: 1 }, { opacity: 0 }, DUR.fast)
+        // the value lands in the slot: symbol gives way, number pops in with a small bounce
+        const cx = s.w / 2, k = (v, dy = 0) => `translate(${cx} ${dy}) scale(${v}) translate(${-cx} 0)`
+        rec.tw(s.sym, { opacity: 1 }, { opacity: 0 }, M.settle, 'power1.out')
         rec.set(s.val, { textContent: '' }, { textContent: text })
-        rec.tw(s.val, { opacity: 0 }, { opacity: 1 }, DUR.fast)
+        rec.tw(s.val, { opacity: 0 }, { opacity: 1 }, M.settle * 0.6, 'power1.out')
+        rec.tw(s.val, { attr: { transform: k(0.8, 4) } }, { attr: { transform: k(1, 0) } }, M.settle * 1.6, EASE.land)
       } else {
         rec.seq(() => {
           rec.tw(s.val, { opacity: 1 }, { opacity: 0 }, DUR.fast / 2)

@@ -138,7 +138,8 @@ export function plot(st, spec = {}) {
     c._paints.push({ el: path, attr: 'stroke', variant: 'main' })
     c._flowEl = path
     Object.defineProperty(c, '_points', { get: () => { const g = comp._origin(); return localPts.map(p => ({ x: comp._st8.x + g.x + p.x, y: comp._st8.y + g.y + p.y })) } })
-    if (live) rec.par(() => { c._setVis(true, { speed: 'fast' }); if (!op.dashed) drawIn(path, L) })
+    if (!op.dashed) { c._drawEl = path; c._drawLen = L }
+    if (live) c._setVis(true)
     return c
   }
   return wrapComp(comp, {
@@ -235,6 +236,7 @@ export function neuralNet(st, spec = {}) {
     const e = child(st, comp, 'net-edge', eb, { x: pa.x, y: pa.y }, { id: `${a}-${b}`, tags: [`from-${a}`, `to-${b}`] })
     e._paints.push({ el: line, attr: 'stroke', variant: 'main' })
     e._flowEl = line
+    e._drawEl = line; e._drawLen = Math.hypot(p2.x - p1.x, p2.y - p1.y)
     edges.set(wKey(a, b), e)
     // weight chip: spread along edge by target index to avoid collisions
     const t = ids[i + 1].length > 1 ? 0.2 + 0.16 * (bi % 3) : 0.3
@@ -349,6 +351,7 @@ export function graph(st, spec = {}) {
     const c = child(st, comp, 'graph-edge', eb, { x: 0, y: 0 }, { id: `${e.from}-${e.to}`, text: t, role: e.role })
     c._paints.push({ el: path, attr: 'stroke', variant: 'main' })
     c._flowEl = path
+    c._drawEl = path; c._drawLen = Math.hypot(p2.x - p1.x, p2.y - p1.y)
     c._points = Array.from({ length: 25 }, (_, i) => { const g = comp._origin(); return { x: comp._st8.x + g.x + p1.x + (p2.x - p1.x) * i / 24, y: comp._st8.y + g.y + p1.y + (p2.y - p1.y) * i / 24 } })
     edges.set(`${e.from}>${e.to}`, c)
   }
@@ -519,7 +522,8 @@ export function sequence(st, spec = {}) {
       m._fit = chipFit(st, mr, FONT.md, 650, 22, 40)
       m._points = Array.from({ length: 25 }, (_, i) => { const gg = comp._origin(); return { x: comp._st8.x + gg.x + x1 + (x2 - x1) * i / 24, y: comp._st8.y + gg.y + y } })
       msgs.push(m)
-      if (live && !op.hidden) rec.par(() => { m._setVis(true, { speed: 'fast' }); if (!op.dashed) rec.tw(path, { attr: { 'stroke-dasharray': `${L} ${L}`, 'stroke-dashoffset': L } }, { attr: { 'stroke-dasharray': `${L} ${L}`, 'stroke-dashoffset': 0 } }, DUR.normal) })
+      if (!op.dashed) { m._drawEl = path; m._drawLen = L }
+      if (live && !op.hidden) m._setVis(true)
       return m._api
     },
     note(actorId, text, op = {}) {

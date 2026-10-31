@@ -4,6 +4,9 @@ import { Stage } from './stage.js'
 import { BUILTIN_COMPONENTS } from './components.js'
 import { Player } from './player.js'
 import { qaApi } from './qa.js'
+import { registerMotion } from './motion.js'
+
+registerMotion(window.gsap)
 
 for (const [name, f] of Object.entries(BUILTIN_COMPONENTS)) Stage.prototype[name] = function (spec) { return f(this, spec) }
 

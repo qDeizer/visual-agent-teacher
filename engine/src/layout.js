@@ -3,6 +3,7 @@
 // Folded steps play compressed inside their stop; with a parent summary() they apply instantly after it.
 const GAP = 0.02
 const FOLD = 0.7
+const OVERLAP = 0.22 // the next action of a step starts while the previous one is settling (no dead stops)
 
 export function layoutLevel(compiled, level, onPause) {
   const gsap = window.gsap
@@ -18,6 +19,7 @@ export function layoutLevel(compiled, level, onPause) {
       case 'tw': {
         const d = it.d * f
         tl.fromTo(it.el, { ...it.from }, { ...it.to, duration: d, ease: it.ease, immediateRender: false }, t0)
+        if (cur && d > 0) { const keys = Object.keys(it.to); if (keys.every(k => k === 'autoAlpha' || k === 'opacity')) cur.motion.fade++; else cur.motion.move++ }
         return t0 + d
       }
       case 'raw': { const a = it.anim; a.paused(false); a.timeScale(f === 1 ? 1 : f === 0 ? 1e6 : 1 / f); tl.add(a, t0); return t0 + it.d * f }
@@ -32,17 +34,26 @@ export function layoutLevel(compiled, level, onPause) {
     const isStop = !folded && n.level <= level
     if (isStop) {
       if (cur) { cur.end = t + 0.002; t = cur.end + GAP }
-      cur = { node: n, id: n.id, start: t, end: t, say: n.say.join(' '), chapter: chapterOf(n), level: n.level }
+      cur = { node: n, id: n.id, start: t, end: t, say: n.say.join(' '), chapter: chapterOf(n), level: n.level, motion: { fade: 0, move: 0 } }
       stops.push(cur)
     }
     const useSummary = isStop && n.summary && !hasStopBelow(n)
     const f = factor
+    let prev = null // { start, end } of the previous motion item in this step
     for (const it of n.items) {
       if (it.k === 'node') {
+        prev = null
         if (useSummary) continue
         const kidFolded = folded || it.node.level > level
         visit(it.node, kidFolded, kidFolded ? Math.min(f, FOLD) : f)
-      } else t = placeItem(it, t, f)
+      } else {
+        const motion = it.k === 'tw' || it.k === 'par' || it.k === 'seq'
+        let start = t
+        if (motion && prev && prev.end > prev.start) start = Math.max(prev.start, prev.end - OVERLAP * (prev.end - prev.start))
+        const end = placeItem(it, start, f)
+        if (motion) prev = { start, end }; else if (it.k === 'wait') prev = null
+        t = Math.max(t, end)
+      }
       if (cur) cur.end = Math.max(cur.end, t)
     }
     if (useSummary) {

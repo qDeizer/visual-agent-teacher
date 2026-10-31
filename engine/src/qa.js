@@ -146,5 +146,9 @@ export function qaApi(player) {
     go(i, level) { if (level) player.setLevel(level); player.jump(i); return player.lay.stops[i]?.id },
     play(i) { player.jump(Math.max(0, i - 1)); player.next(); return player.lay.stops[i]?.id },
     snapshot, verify, layout,
+    /** Per stop: how many tweens only fade vs. move/transform/count/draw something. */
+    motion: () => player.lay.stops.map(s => ({ id: s.id, ...s.motion })),
+    /** Seek inside stop i: frac 0 = its start, 1 = its end (for film strips). */
+    frame(i, frac) { const s = player.lay.stops[i]; const prev = i ? player.lay.stops[i - 1].end : 0; player.jump(Math.max(0, i - 1)); const t = prev + (s.end - prev) * frac; player.lay.tl.seek(t); player.effects.sync(t); return t },
   }
 }

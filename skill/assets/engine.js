@@ -153,6 +153,114 @@
     return variant === "main" ? `var(--${s})` : `var(--${s}-${variant})`;
   }
 
+  // engine/src/motion.js
+  var M = {
+    focus: 0.25,
+    enter: 0.45,
+    exit: 0.25,
+    draw: 0.7,
+    travel: 0.9,
+    into: 0.5,
+    settle: 0.25,
+    camera: 1.4,
+    count: 0.6,
+    color: 0.4,
+    lead: 0.12
+    // anticipation before a flight
+  };
+  var EASE = {
+    enter: "back.out(1.6)",
+    exit: "power2.in",
+    travel: "power2.inOut",
+    settle: "power2.out",
+    land: "back.out(3)",
+    count: "power2.out",
+    focus: "power2.out"
+  };
+  var parseNum = (s) => {
+    if (typeof s !== "string") return NaN;
+    const t = s.trim().replace("−", "-").replace(/^%/, "").replace(/%$/, "");
+    if (!/^-?\d+([.,]\d+)?$/.test(t)) return NaN;
+    return Number(t.replace(",", "."));
+  };
+  var numericText = (s) => Number.isFinite(parseNum(s));
+  var decimals = (s) => {
+    const m = String(s).match(/[.,](\d+)/);
+    return m ? m[1].length : 0;
+  };
+  function arcPoint(a, b, lift, r) {
+    const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2 - lift;
+    const u = 1 - r;
+    return { x: u * u * a.x + 2 * u * r * cx + r * r * b.x, y: u * u * a.y + 2 * u * r * cy + r * r * b.y };
+  }
+  var arcLift = (a, b) => Math.min(120, Math.abs(b.x - a.x) * 0.25 + 30);
+  function registerMotion(gsap) {
+    gsap.registerPlugin({
+      name: "vatNum",
+      init(target, v) {
+        this.t = target;
+        this.fromS = v.from;
+        this.toS = v.to;
+        this.lang = v.lang;
+        this.a = parseNum(v.from);
+        this.b = parseNum(v.to);
+        this.dp = Math.max(decimals(v.from), decimals(v.to));
+        this.pct = /%/.test(v.to);
+      },
+      render(ratio, d) {
+        if (ratio <= 0) {
+          d.t.textContent = d.fromS;
+          return;
+        }
+        if (ratio >= 1) {
+          d.t.textContent = d.toS;
+          return;
+        }
+        let s = fmt(d.a + (d.b - d.a) * ratio, d.dp, d.lang);
+        if (d.pct) s = /^tr/i.test(d.lang) ? `%${s}` : `${s}%`;
+        d.t.textContent = s;
+      }
+    });
+    gsap.registerPlugin({
+      name: "vatArc",
+      init(target, v) {
+        this.t = target;
+        this.v = v;
+      },
+      render(ratio, d) {
+        const { from, to, lift = arcLift(from, to), shrink = 0.08 } = d.v;
+        const p = arcPoint(from, to, lift, ratio);
+        const s = 1 - shrink * Math.sin(Math.PI * Math.min(1, Math.max(0, ratio)));
+        d.t.setAttribute("transform", `translate(${p.x.toFixed(2)} ${p.y.toFixed(2)}) scale(${s.toFixed(4)})`);
+      }
+    });
+    gsap.registerPlugin({
+      name: "vatPoly",
+      init(target, v) {
+        this.t = target;
+        this.pts = v.pts;
+        this.dx = v.dx || 0;
+        this.dy = v.dy || 0;
+        const L = [0];
+        for (let i = 1; i < v.pts.length; i++) L.push(L[i - 1] + Math.hypot(v.pts[i].x - v.pts[i - 1].x, v.pts[i].y - v.pts[i - 1].y));
+        this.L = L;
+      },
+      render(ratio, d) {
+        const total = d.L[d.L.length - 1] || 1, want = Math.min(1, Math.max(0, ratio)) * total;
+        let i = 1;
+        while (i < d.L.length - 1 && d.L[i] < want) i++;
+        const a = d.pts[i - 1], b = d.pts[i], seg = d.L[i] - d.L[i - 1] || 1, k = (want - d.L[i - 1]) / seg;
+        d.t.setAttribute("transform", `translate(${(a.x + (b.x - a.x) * k + d.dx).toFixed(2)} ${(a.y + (b.y - a.y) * k + d.dy).toFixed(2)})`);
+      }
+    });
+  }
+  function resolveColor(v) {
+    const m = /^var\((--[\w-]+)\)$/.exec(String(v || "").trim());
+    if (!m) return v;
+    const c = getComputedStyle(document.documentElement).getPropertyValue(m[1]).trim();
+    return c || v;
+  }
+
   // engine/src/core.js
   var DUR = { fast: 0.35, normal: 0.6, slow: 1 };
   var DIM = 0.22;
@@ -247,7 +355,8 @@
       this._parts = /* @__PURE__ */ new Map();
       const el = this._el = svg("g", { class: `vo vo-${o.kind}`, "data-id": id });
       this._s = svg("g", { class: "vo-s" }, el);
-      this._z = svg("g", { class: "vo-z" }, this._s);
+      this._e = svg("g", { class: "vo-e" }, this._s);
+      this._z = svg("g", { class: "vo-z" }, this._e);
       this._b = svg("g", { class: "vo-b" }, this._z);
       this._j = svg("g", { class: "vo-j" }, this._b);
       this._l = svg("g", { class: "vo-l" }, this._j);
@@ -269,12 +378,18 @@
       window.gsap.set(this._z, { attr: { transform: S(z) }, opacity: zVis });
       window.gsap.set(this._l, { opacity: 1 });
       this._measure();
+      window.gsap.set(this._e, { attr: { transform: this._E(1, 0) } });
       stage._register(this);
       this._api = guard(this, `Obj '${id}' (${o.kind})`);
     }
     _S(sx, sy = sx) {
       const s = S(sx, sy);
       return this._o ? `${T(this._o.x, this._o.y)} ${s} ${T(-this._o.x, -this._o.y)}` : s;
+    }
+    /** Enter/exit transform about the object's own centre: scale k, offset dy. */
+    _E(k, dy) {
+      const cx = (this._bb?.x ?? 0) + (this._bb?.w ?? 0) / 2, cy = (this._bb?.y ?? 0) + (this._bb?.h ?? 0) / 2;
+      return `${T(cx, cy + dy)} ${S(k)} ${T(-cx, -cy)}`;
     }
     // ── read-only logical state ──
     get tags() {
@@ -327,11 +442,23 @@
       return { x: c.x - this.w * z / 2, y: c.y - this.h * z / 2, w: this.w * z, h: this.h * z, cx: c.x, cy: c.y };
     }
     // ── appearance ──
+    /** Appear: pop in (rise + scale with a little overshoot), lines draw themselves. Disappear: quick shrink + fade. */
     _setVis(on, o) {
       const from = this._st8.vis ? 1 : 0, to = on ? 1 : 0;
       if (from === to) return;
       this._st8.vis = on;
-      rec.tw(this._el, { autoAlpha: from }, { autoAlpha: to }, dur(o?.speed, "fast"), "power1.inOut");
+      const k = o?.speed !== void 0 ? dur(o.speed) / DUR.normal : 1;
+      if (on) rec.par(() => {
+        rec.tw(this._el, { autoAlpha: 0 }, { autoAlpha: 1 }, M.enter * 0.55 * k, "power1.out");
+        if (this._drawEl) {
+          const L = this._drawLen || 400;
+          rec.tw(this._drawEl, { attr: { "stroke-dasharray": `${L} ${L}`, "stroke-dashoffset": L } }, { attr: { "stroke-dasharray": `${L} ${L}`, "stroke-dashoffset": 0 } }, M.draw * k, "power2.inOut");
+        } else rec.tw(this._e, { attr: { transform: this._E(0.82, 10) } }, { attr: { transform: this._E(1, 0) } }, M.enter * k, EASE.enter);
+      });
+      else rec.par(() => {
+        rec.tw(this._el, { autoAlpha: 1 }, { autoAlpha: 0 }, M.exit * k, EASE.exit);
+        rec.tw(this._e, { attr: { transform: this._E(1, 0) } }, { attr: { transform: this._E(0.9, 0) } }, M.exit * k, EASE.exit);
+      });
     }
     show(o) {
       this._delay(o);
@@ -393,7 +520,11 @@
           const from = p.el.getAttribute(p.attr + "-role-now") || p.el.getAttribute(p.attr);
           const to = roleVar(this._st, role, p.variant);
           p.el.setAttribute(p.attr + "-role-now", to);
-          rec.set(p.el, { attr: { [p.attr]: from } }, { attr: { [p.attr]: to } });
+          if (rec.live) rec.seq(() => {
+            rec.tw(p.el, { attr: { [p.attr]: resolveColor(from) } }, { attr: { [p.attr]: resolveColor(to) } }, M.color, "power1.inOut");
+            rec.set(p.el, { attr: { [p.attr]: resolveColor(to) } }, { attr: { [p.attr]: to } });
+          });
+          else rec.set(p.el, { attr: { [p.attr]: from } }, { attr: { [p.attr]: to } });
         }
       });
       this._role = role;
@@ -429,20 +560,19 @@
     along(path, o = {}) {
       this._delay(o);
       const pts = this._st._pathPoints(path, o.plot);
-      const total = dur(o.speed, "slow") * 1.4;
       const c0 = this._center();
       const ox = this._st8.x - c0.x, oy = this._st8.y - c0.y;
-      this._st._withFollow(this, () => rec.seq(() => {
-        const segs = pts.length - 1;
-        for (let i = 1; i <= segs; i++) {
-          const a = pts[i - 1], b = pts[i];
-          const fx = a.x + ox, fy = a.y + oy, tx = b.x + ox, ty = b.y + oy;
-          rec.tw(this._el, { attr: { transform: T(i === 1 ? this._st8.x : fx, i === 1 ? this._st8.y : fy) } }, { attr: { transform: T(tx, ty) } }, total / segs, "none");
-        }
-        const last = pts[pts.length - 1];
+      const all = [{ x: c0.x, y: c0.y }, ...pts];
+      let len = 0;
+      for (let i = 1; i < all.length; i++) len += Math.hypot(all[i].x - all[i - 1].x, all[i].y - all[i - 1].y);
+      const total = o.speed !== void 0 ? dur(o.speed) : Math.min(2.4, Math.max(M.travel, len / 520));
+      const from = { x: this._st8.x, y: this._st8.y };
+      this._st._withFollow(this, () => {
+        rec.tw(this._el, { attr: { transform: T(from.x, from.y) } }, { vatPoly: { pts: all, dx: ox, dy: oy } }, total, o.ease || "sine.inOut");
+        const last = all[all.length - 1];
         this._st8.x = last.x + ox;
         this._st8.y = last.y + oy;
-      }), o);
+      }, o);
       return this._api;
     }
     scaleTo(k, o) {
@@ -466,17 +596,53 @@
       const to = this._st._plain(String(text));
       if (from === to) return this._api;
       this._curText = to;
-      const d = dur(o?.speed, "fast");
-      rec.seq(() => {
-        rec.tw(el, { opacity: 1 }, { opacity: 0 }, d * 0.4, "power1.in");
-        rec.set(el, { textContent: from }, { textContent: to });
-        if (this._fit) this._fit(to);
-        rec.tw(el, { opacity: 0 }, { opacity: 1 }, d * 0.6, "power1.out");
-      });
       if (!rec.live) {
         el.textContent = to;
         if (this._fit) this._fit(to);
+        return this._api;
       }
+      const k = o?.speed !== void 0 ? dur(o.speed) / DUR.normal : 1;
+      if (numericText(from) && numericText(to)) {
+        rec.par(() => {
+          rec.tw(el, {}, { vatNum: { from, to, lang: this._st._ctx.lang } }, M.count * k, EASE.count);
+          if (this._fit) this._fit(to);
+        });
+      } else {
+        rec.seq(() => {
+          rec.tw(el, { opacity: 1, attr: { transform: "translate(0 0)" } }, { opacity: 0, attr: { transform: "translate(0 -10)" } }, 0.14 * k, "power2.in");
+          rec.set(el, { textContent: from }, { textContent: to });
+          if (this._fit) this._fit(to);
+          rec.tw(el, { opacity: 0, attr: { transform: "translate(0 10)" } }, { opacity: 1, attr: { transform: "translate(0 0)" } }, 0.22 * k, "power2.out");
+        });
+      }
+      return this._api;
+    }
+    /** Tween any SVG attributes of the object's main shape (or of a part): obj.to({ r: 40, fill: 'accent' }).
+     *  Colours may be roles. Paths morph when the new `d` has the same command structure. */
+    to(attrs, o = {}) {
+      this._delay(o);
+      if (!attrs || typeof attrs !== "object") throw new VatError(`obj.to({ attr: value, … }) needs an object of SVG attributes (r, width, height, x, y, d, fill, stroke, opacity…).`);
+      const target = o.part ? this._st._objOf(this.part(o.part))._body : this._prim || this._body.querySelector("rect,circle,ellipse,path,line,polygon,polyline,text") || this._body;
+      target._now = target._now || {};
+      const from = {}, to = {};
+      for (const [k, v0] of Object.entries(attrs)) {
+        let v = v0;
+        if ((k === "fill" || k === "stroke") && typeof v === "string" && !/^(#|rgb|hsl|var\(|none)/.test(v)) {
+          this._st._checkRole(v);
+          v = roleVar(this._st, v, k === "fill" ? "soft" : "main");
+        }
+        const cur = target._now[k] ?? target.getAttribute(k) ?? (k === "opacity" ? 1 : 0);
+        const isColor = k === "fill" || k === "stroke";
+        from[k] = isColor ? resolveColor(cur) : cur;
+        to[k] = isColor ? resolveColor(v) : v;
+        target._now[k] = v;
+      }
+      if (!rec.live) {
+        for (const [k, v] of Object.entries(to)) target.setAttribute(k, v);
+        this._measure();
+        return this._api;
+      }
+      rec.tw(target, { attr: from }, { attr: to }, o.speed !== void 0 ? dur(o.speed) : M.travel * 0.8, o.ease || "power2.inOut");
       return this._api;
     }
     // ── continuous effects (logical events; effects.js plays them) ──
@@ -613,7 +779,7 @@
       this._objs.forEach((o, i) => f(o._api, i));
     }
     _apply(verb, args, o) {
-      const stagger = o?.stagger !== void 0 ? dur(o.stagger) : 0;
+      const stagger = o?.stagger !== void 0 ? dur(o.stagger) : Math.min(0.055, 0.4 / Math.max(1, this._objs.length - 1));
       rec.par(() => this._objs.forEach((obj, i) => rec.seq(() => {
         if (stagger && i) rec.wait(stagger * i);
         obj[verb](...args);
@@ -663,14 +829,14 @@
   var ROOT = { w: 1600, h: 900 };
   var WORLD = { w: 1600, h: 770 };
   var ASPECT = WORLD.w / WORLD.h;
-  var M = 40;
+  var M2 = 40;
   var REGIONS = {
-    main: { x: M, y: 30, w: WORLD.w - 2 * M, h: WORLD.h - 60 },
+    main: { x: M2, y: 30, w: WORLD.w - 2 * M2, h: WORLD.h - 60 },
     center: { x: 360, y: 150, w: 880, h: 470 },
-    left: { x: M, y: 30, w: 730, h: WORLD.h - 60 },
+    left: { x: M2, y: 30, w: 730, h: WORLD.h - 60 },
     right: { x: 830, y: 30, w: 730, h: WORLD.h - 60 },
-    top: { x: M, y: 24, w: WORLD.w - 2 * M, h: 210 },
-    bottom: { x: M, y: 530, w: WORLD.w - 2 * M, h: 216 },
+    top: { x: M2, y: 24, w: WORLD.w - 2 * M2, h: 210 },
+    bottom: { x: M2, y: 530, w: WORLD.w - 2 * M2, h: 216 },
     inset: { x: 1170, y: 30, w: 390, h: 250 }
   };
   var GAPS = { xs: 6, sm: 14, md: 28, lg: 56 };
@@ -816,7 +982,8 @@
         if (!p._toWorld) throw new VatError(`{ plot } placement needs a plot created with stage.plot().`);
         return p._toWorld(place.x, place.y);
       }
-      if ("x" in place || "y" in place) throw new VatError(`Raw {x, y} positions are not allowed (no screen pixels). Use a region ('left', 'main', …), { region, u, v } with u,v in 0..1, { near: obj, side }, or { plot, x, y } for plot coordinates.`);
+      if (Number.isFinite(place.x) && Number.isFinite(place.y)) return { x: place.x, y: place.y };
+      if ("x" in place || "y" in place) throw new VatError(`Placement { x, y } needs both numbers (world units: x 0..1600, y 0..770).`);
       throw new VatError(`Invalid placement ${JSON.stringify(place)}. See Placement in engine-api.d.ts.`);
     }
     _pathPoints(path, plot2) {
@@ -917,6 +1084,10 @@
         origin: extra.origin
       });
       if (extra.fit) o._fit = extra.fit.bind(o);
+      if (extra.drawEl) {
+        o._drawEl = extra.drawEl;
+        o._drawLen = extra.drawLen;
+      }
       if (extra.points) o._points = extra.points;
       if (extra.at0) {
         o._st8.x = extra.at0.x;
@@ -932,11 +1103,7 @@
         o._exists = true;
         rec.ev({ type: "exist", obj: o.id, on: true });
         if (!opts.hidden) {
-          if (extra.drawIn) rec.par(() => {
-            o._setVis(true, { speed: "fast" });
-            extra.drawIn(o);
-          });
-          else o._setVis(true, { speed: "fast" });
+          o._setVis(true);
         }
       } else {
         o._st8.vis = !opts.hidden;
@@ -966,6 +1133,7 @@
       for (const n of [...doc.documentElement.childNodes]) inner.appendChild(document.importNode(n, true));
       if (o.kind && BUILTIN_KINDS.has(o.kind)) throw new VatError(`shape kind '${o.kind}' is reserved by a built-in component. Choose another kind name.`);
       const obj = this._create(o.kind || "shape", body, o, {});
+      obj._prim = inner.firstElementChild;
       this._paint(obj, body, o.role, "soft", "main");
       obj.kind = o.kind || "shape";
       return obj._api;
@@ -1065,7 +1233,8 @@
         text,
         pos: { x: (p1.x + p2.x) / 2 + (curve ? (cx - mx) / 2 : 0), y: (p1.y + p2.y) / 2 + (curve ? (cy - my) / 2 : 0) },
         points: pts,
-        drawIn: o.dashed ? null : () => rec.tw(path, { attr: { "stroke-dasharray": `${L} ${L}`, "stroke-dashoffset": L } }, { attr: { "stroke-dasharray": `${L} ${L}`, "stroke-dashoffset": 0 } }, DUR.normal)
+        drawEl: o.dashed ? null : path,
+        drawLen: L
       });
       obj._paints.push({ el: path, attr: "stroke", variant: "main" });
       obj._flowEl = path;
@@ -1139,18 +1308,29 @@
           else tobj.pulse({ speed: "fast" });
         };
       }
-      if (!src) src = { x: dst.x, y: dst.y - 70 };
+      let srcObj = from && from._st8 ? from : from && typeof from.fmt === "function" ? this._valIndex.get(from.id) : this._objs.get(from?.id);
+      if (!src) {
+        src = { x: dst.x, y: dst.y - 90 };
+        this._warnings.push(`fly: value '${text}' is not shown anywhere before it flies; it appears above its target. Show its source first (e.g. a value chip or a cell) so the learner sees where it comes from.`);
+      }
       const g = svg("g", { class: "vat-chip", style: "visibility:hidden;opacity:0" }, this._hudLayers.fly);
-      const w = this.measureText(text, FONT.md, 650) + 22;
-      svg("rect", { x: -w / 2, y: -17, width: w, height: 34, rx: 9, fill: "var(--surface)", stroke: roleVar(this, role, "main"), "stroke-width": 2.5 }, g);
+      const w = this.measureText(text, FONT.md, 650) + 24;
+      svg("rect", { x: -w / 2, y: -20, width: w, height: 40, rx: 10, fill: "var(--surface)", stroke: roleVar(this, role, "main"), "stroke-width": 2.5 }, g);
       this._textEl(g, text, { size: FONT.md, weight: 650, fill: roleVar(this, role, "ink") });
-      g.setAttribute("transform", T(src.x, src.y));
-      const d = dur(o?.speed, "normal") * 1.15;
+      g.setAttribute("transform", `${T(src.x, src.y)} scale(1)`);
+      const d = o?.speed !== void 0 ? dur(o.speed) : M.travel;
+      const lift = arcLift(src, dst);
       rec.seq(() => {
-        rec.tw(g, { autoAlpha: 0 }, { autoAlpha: 1 }, 0.15, "power1.out");
-        rec.tw(g, { attr: { transform: T(src.x, src.y) } }, { attr: { transform: T(dst.x, dst.y) } }, d, "power2.inOut");
         rec.par(() => {
-          rec.tw(g, { autoAlpha: 1 }, { autoAlpha: 0 }, 0.18);
+          if (srcObj && srcObj._e) rec.seq(() => {
+            rec.tw(srcObj._e, { attr: { transform: srcObj._E(1, 0) } }, { attr: { transform: srcObj._E(1.08, 0) } }, M.lead, "power2.out");
+            rec.tw(srcObj._e, { attr: { transform: srcObj._E(1.08, 0) } }, { attr: { transform: srcObj._E(1, 0) } }, M.lead * 1.5, "power2.inOut");
+          });
+          rec.tw(g, { autoAlpha: 0 }, { autoAlpha: 1 }, M.lead, "power1.out");
+        });
+        rec.tw(g, { attr: { transform: `${T(src.x, src.y)} scale(1)` } }, { vatArc: { from: src, to: dst, lift } }, d, EASE.travel);
+        rec.par(() => {
+          rec.tw(g, { autoAlpha: 1 }, { autoAlpha: 0 }, M.settle, "power1.in");
           land();
         });
       });
@@ -1594,10 +1774,11 @@
         const g = comp._origin();
         return localPts.map((p) => ({ x: comp._st8.x + g.x + p.x, y: comp._st8.y + g.y + p.y }));
       } });
-      if (live) rec.par(() => {
-        c._setVis(true, { speed: "fast" });
-        if (!op.dashed) drawIn(path, L);
-      });
+      if (!op.dashed) {
+        c._drawEl = path;
+        c._drawLen = L;
+      }
+      if (live) c._setVis(true);
       return c;
     };
     return wrapComp(comp, {
@@ -1709,6 +1890,8 @@
       const e = child(st, comp, "net-edge", eb, { x: pa.x, y: pa.y }, { id: `${a}-${b}`, tags: [`from-${a}`, `to-${b}`] });
       e._paints.push({ el: line, attr: "stroke", variant: "main" });
       e._flowEl = line;
+      e._drawEl = line;
+      e._drawLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
       edges.set(wKey(a, b), e);
       const t = ids[i + 1].length > 1 ? 0.2 + 0.16 * (bi % 3) : 0.3;
       const wv = vals.weights?.[wKey(a, b)] ?? vals.weights?.[`${a}-${b}`];
@@ -1847,6 +2030,8 @@
       const c = child(st, comp, "graph-edge", eb, { x: 0, y: 0 }, { id: `${e.from}-${e.to}`, text: t, role: e.role });
       c._paints.push({ el: path, attr: "stroke", variant: "main" });
       c._flowEl = path;
+      c._drawEl = path;
+      c._drawLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
       c._points = Array.from({ length: 25 }, (_, i) => {
         const g = comp._origin();
         return { x: comp._st8.x + g.x + p1.x + (p2.x - p1.x) * i / 24, y: comp._st8.y + g.y + p1.y + (p2.y - p1.y) * i / 24 };
@@ -2055,10 +2240,11 @@
           return { x: comp._st8.x + gg.x + x1 + (x2 - x1) * i / 24, y: comp._st8.y + gg.y + y };
         });
         msgs.push(m);
-        if (live && !op.hidden) rec.par(() => {
-          m._setVis(true, { speed: "fast" });
-          if (!op.dashed) rec.tw(path, { attr: { "stroke-dasharray": `${L} ${L}`, "stroke-dashoffset": L } }, { attr: { "stroke-dasharray": `${L} ${L}`, "stroke-dashoffset": 0 } }, DUR.normal);
-        });
+        if (!op.dashed) {
+          m._drawEl = path;
+          m._drawLen = L;
+        }
+        if (live && !op.hidden) m._setVis(true);
         return m._api;
       },
       note(actorId, text, op = {}) {
@@ -2582,9 +2768,11 @@
       s.filled = text;
       rec.par(() => {
         if (from === null) {
-          rec.tw(s.sym, { opacity: 1 }, { opacity: 0 }, DUR.fast);
+          const cx = s.w / 2, k = (v, dy = 0) => `translate(${cx} ${dy}) scale(${v}) translate(${-cx} 0)`;
+          rec.tw(s.sym, { opacity: 1 }, { opacity: 0 }, M.settle, "power1.out");
           rec.set(s.val, { textContent: "" }, { textContent: text });
-          rec.tw(s.val, { opacity: 0 }, { opacity: 1 }, DUR.fast);
+          rec.tw(s.val, { opacity: 0 }, { opacity: 1 }, M.settle * 0.6, "power1.out");
+          rec.tw(s.val, { attr: { transform: k(0.8, 4) } }, { attr: { transform: k(1, 0) } }, M.settle * 1.6, EASE.land);
         } else {
           rec.seq(() => {
             rec.tw(s.val, { opacity: 1 }, { opacity: 0 }, DUR.fast / 2);
@@ -2790,7 +2978,7 @@
   }
 
   // engine/src/markup.js
-  var RE = /\[\[([\w-]+)(?:\|([^\]]+))?\]\]|\{\{([\w.-]+)(?::([\w]+))?\}\}|\*\*([^*]+)\*\*/g;
+  var RE = /\[\[([\w-]+)(?:\|([^\]]+))?\]\]|\{\{([\w.-]+)(?::([\w]+))?\}\}|\*\*([^*]+)\*\*|‹([^›]+)›/g;
   function createMarkup(ctx) {
     const lang = () => ctx.lang;
     const term = (id, shown) => {
@@ -2821,23 +3009,24 @@
     };
     return {
       plain(s) {
-        return String(s).replace(RE, (m, tid, shown, vid, f, bold) => tid ? term(tid, shown) : vid ? value(vid, f) : this.plain(bold));
+        return String(s).replace(RE, (m, tid, shown, vid, f, bold, late) => tid ? term(tid, shown) : vid ? value(vid, f) : this.plain(bold ?? late));
       },
       html(s) {
         let out = "", last = 0;
         const str = String(s);
         for (const m of str.matchAll(RE)) {
           out += escapeHtml(str.slice(last, m.index));
-          const [, tid, shown, vid, f, bold] = m;
+          const [, tid, shown, vid, f, bold, late] = m;
           if (tid) out += `<button type="button" class="term" data-term="${escapeHtml(tid)}">${escapeHtml(term(tid, shown))}</button>`;
           else if (vid) out += `<span class="val">${escapeHtml(value(vid, f))}</span>`;
+          else if (late !== void 0) out += `<span class="late">${this.html(late)}</span>`;
           else out += `<b>${this.html(bold)}</b>`;
           last = m.index + m[0].length;
         }
         return out + escapeHtml(str.slice(last));
       },
       terms(s) {
-        return [...String(s).matchAll(RE)].flatMap((m) => m[1] ? [m[1]] : m[5] ? this.terms(m[5]) : []);
+        return [...String(s).matchAll(RE)].flatMap((m) => m[1] ? [m[1]] : m[5] ? this.terms(m[5]) : m[6] ? this.terms(m[6]) : []);
       },
       check(s) {
         const out = this.plain(s);
@@ -3058,6 +3247,7 @@
   // engine/src/layout.js
   var GAP = 0.02;
   var FOLD = 0.7;
+  var OVERLAP = 0.22;
   function layoutLevel(compiled, level, onPause) {
     const gsap = window.gsap;
     const tl = gsap.timeline({ paused: true });
@@ -3071,6 +3261,11 @@
         case "tw": {
           const d = it.d * f;
           tl.fromTo(it.el, { ...it.from }, { ...it.to, duration: d, ease: it.ease, immediateRender: false }, t0);
+          if (cur && d > 0) {
+            const keys = Object.keys(it.to);
+            if (keys.every((k) => k === "autoAlpha" || k === "opacity")) cur.motion.fade++;
+            else cur.motion.move++;
+          }
           return t0 + d;
         }
         case "raw": {
@@ -3106,17 +3301,27 @@
           cur.end = t + 2e-3;
           t = cur.end + GAP;
         }
-        cur = { node: n, id: n.id, start: t, end: t, say: n.say.join(" "), chapter: chapterOf(n), level: n.level };
+        cur = { node: n, id: n.id, start: t, end: t, say: n.say.join(" "), chapter: chapterOf(n), level: n.level, motion: { fade: 0, move: 0 } };
         stops.push(cur);
       }
       const useSummary = isStop && n.summary && !hasStopBelow(n);
       const f = factor;
+      let prev = null;
       for (const it of n.items) {
         if (it.k === "node") {
+          prev = null;
           if (useSummary) continue;
           const kidFolded = folded || it.node.level > level;
           visit(it.node, kidFolded, kidFolded ? Math.min(f, FOLD) : f);
-        } else t = placeItem(it, t, f);
+        } else {
+          const motion = it.k === "tw" || it.k === "par" || it.k === "seq";
+          let start = t;
+          if (motion && prev && prev.end > prev.start) start = Math.max(prev.start, prev.end - OVERLAP * (prev.end - prev.start));
+          const end = placeItem(it, start, f);
+          if (motion) prev = { start, end };
+          else if (it.k === "wait") prev = null;
+          t = Math.max(t, end);
+        }
         if (cur) cur.end = Math.max(cur.end, t);
       }
       if (useSummary) {
@@ -3483,8 +3688,8 @@
         return;
       }
       this.idx = i;
-      this._showStop(i);
       this.playing = true;
+      this._showStop(i);
       this._setPlaying(true);
       this.lay.tl.seek(this.stops[i - 1].end + 1e-3).play();
       this._tick();
@@ -3496,8 +3701,8 @@
       const to = this.stops[target].end, from = tl.time();
       const sayNode = L < 3 ? this.stops[target].unitNode[L] : null;
       this.idx = target;
-      this._showStop(target, sayNode);
       this.playing = true;
+      this._showStop(target, sayNode);
       this._setPlaying(true);
       window.gsap.to(tl, {
         time: to,
@@ -3510,6 +3715,7 @@
           this._setPlaying(false);
           tl.pause();
           this.effects.sync(to);
+          this.$.say.classList.add("reveal");
           this._panelsRender();
         }
       });
@@ -3531,6 +3737,7 @@
         this.idx = i;
         this._showStop(i);
       }
+      this.$.say.classList.add("reveal");
       this._panelsRender();
     }
     setSpeed(v) {
@@ -3552,6 +3759,7 @@
       const el = this.$.say;
       el.innerHTML = html;
       el.dataset.stop = s.id;
+      el.classList.toggle("reveal", !this.playing);
       el.style.fontSize = "";
       for (let fs = 17; fs >= 13 && el.scrollHeight > el.clientHeight + 1; fs -= 0.5) el.style.fontSize = fs + "px";
       this.$.count.textContent = `${i + 1} / ${this.stops.length}`;
@@ -3960,11 +4168,24 @@
       },
       snapshot,
       verify,
-      layout
+      layout,
+      /** Per stop: how many tweens only fade vs. move/transform/count/draw something. */
+      motion: () => player.lay.stops.map((s) => ({ id: s.id, ...s.motion })),
+      /** Seek inside stop i: frac 0 = its start, 1 = its end (for film strips). */
+      frame(i, frac) {
+        const s = player.lay.stops[i];
+        const prev = i ? player.lay.stops[i - 1].end : 0;
+        player.jump(Math.max(0, i - 1));
+        const t = prev + (s.end - prev) * frac;
+        player.lay.tl.seek(t);
+        player.effects.sync(t);
+        return t;
+      }
     };
   }
 
   // engine/src/index.js
+  registerMotion(window.gsap);
   for (const [name, f] of Object.entries(BUILTIN_COMPONENTS)) Stage.prototype[name] = function(spec) {
     return f(this, spec);
   };

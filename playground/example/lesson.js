@@ -1,100 +1,122 @@
-// A complete, small VAT lesson. Copy its structure, not its topic.
+// Example lesson: the arithmetic mean, taught by TRANSFORMING things (not by fading slides).
+// Copy its structure and its motion habits, not its topic:
+//  - objects are born when they are named (pop in), lines draw themselves, numbers count,
+//  - values fly from where they live into the formula, results are born from the formula,
+//  - the key idea is shown as a transformation (bars level out to the mean), the camera zooms for a detail.
+const BASE = 610, X0 = 360, GAP = 200, PX = 40 // world units: baseline y, first bar x, bar spacing, px per hour
+const barX = i => X0 + i * GAP
+
 export default defineLesson({
-  meta: { title: 'Ağırlıklı ortalama', lang: 'tr', goal: 'Vize ve final notlarından ağırlıklı ortalamayı adım adım hesaplayabilmek.' },
+  meta: { title: 'Ortalama: hepsi eşit paylaşsaydı', lang: 'tr', goal: 'Bir sayı listesinin aritmetik ortalamasını hesaplamak ve ne anlama geldiğini görmek.' },
 
   glossary: {
-    grade: { term: 'not', short: 'Bir sınavdan aldığın puan (0–100 arası).', concept: true },
-    weight: { term: 'ağırlık', short: 'Bir notun sonuca ne kadar katılacağını gösteren pay. Bütün ağırlıkların toplamı 1 (yani %100).', symbol: 'w', concept: true },
-    product: { term: 'katkı', short: 'Bir notun kendi ağırlığıyla çarpımı: o notun ortalamaya getirdiği pay.', concept: true },
-    wavg: { term: 'ağırlıklı ortalama', short: 'Her not kendi ağırlığıyla çarpılıp bu katkılar toplanınca çıkan sonuç.', symbol: '\\bar{x}', memorize: true },
+    value: { term: 'değer', short: 'Listedeki tek bir sayı (burada bir günde çalışılan saat).', concept: true },
+    sum: { term: 'toplam', short: 'Bütün değerlerin art arda eklenmesiyle çıkan sayı.', symbol: '\\Sigma', concept: true },
+    count: { term: 'adet', short: 'Listede kaç değer olduğu.', symbol: 'n' },
+    mean: { term: 'ortalama', short: 'Toplamın adede bölümü: herkes eşit paylaşsaydı her birine düşecek miktar.', symbol: '\\bar{x}', concept: true, memorize: true },
   },
 
   inputs: {
-    midterm: { default: 60, min: 0, max: 100, step: 5, term: 'grade' },
-    final: { default: 80, min: 0, max: 100, step: 5, term: 'grade' },
+    d1: { default: 4, min: 0, max: 10, step: 1, term: 'value' },
+    d2: { default: 7, min: 0, max: 10, step: 1, term: 'value' },
+    d3: { default: 3, min: 0, max: 10, step: 1, term: 'value' },
+    d4: { default: 8, min: 0, max: 10, step: 1, term: 'value' },
+    d5: { default: 8, min: 0, max: 10, step: 1, term: 'value' },
   },
 
   model(inp, t) {
-    const m = t.input('midterm', inp.midterm)
-    const f = t.input('final', inp.final)
-    const wm = t.const('wm', 0.4)
-    const wf = t.const('wf', 0.6)
-    const pm = t.mul('pm', m, wm)
-    const pf = t.mul('pf', f, wf)
-    const avg = t.add('avg', pm, pf)
-    return { m, f, wm, wf, pm, pf, avg }
+    const vals = ['d1', 'd2', 'd3', 'd4', 'd5'].map(k => t.input(k, inp[k]))
+    const sum = t.add('sum', ...vals)
+    const n = t.const('n', vals.length)
+    const mean = t.div('mean', sum, n)
+    return { vals, sum, n, mean }
   },
 
   checks: {
-    known: [{ source: 'Yönetmelik örneği: vize %40, final %60; 60 ve 80 → 72', inputs: { midterm: 60, final: 80 }, expect: { pm: 24, pf: 48, avg: 72 } }],
+    known: [{ source: 'Ders kitabı örneği: 4, 7, 3, 8, 8 → toplam 30, ortalama 6', inputs: { d1: 4, d2: 7, d3: 3, d4: 8, d5: 8 }, expect: { sum: 30, mean: 6 } }],
     invariants(d, inp, fail) {
-      const lo = Math.min(inp.midterm, inp.final), hi = Math.max(inp.midterm, inp.final)
-      if (d.avg.value < lo - 1e-9 || d.avg.value > hi + 1e-9) fail('ortalama iki notun arasında olmalı')
+      const xs = d.vals.map(v => v.value)
+      if (d.mean.value < Math.min(...xs) - 1e-9 || d.mean.value > Math.max(...xs) + 1e-9) fail('ortalama en küçük ile en büyük değer arasında olmalı')
+      if (Math.abs(xs.reduce((s, x) => s + (x - d.mean.value), 0)) > 1e-9) fail('sapmaların toplamı 0 olmalı')
     },
   },
 
   scene(stage, d) {
-    const table = stage.table({ at: 'left', columns: ['Sınav', 'Not', 'Ağırlık', 'Katkı'], rows: [['Vize', d.m, d.wm, '—'], ['Final', d.f, d.wf, '—']] })
-    const result = stage.value(d.avg, { at: { region: 'right', u: 0.5, v: 0.5 }, role: 'product', size: 'xl', hidden: true })
-    const caption = stage.label('[[wavg]]', { at: { near: result, side: 'top', gap: 'md' }, hidden: true })
-    return { table, result, caption }
+    // free visuals: plain shapes at world coordinates (no component needed)
+    const axis = stage.shape(`<line x1="0" y1="0" x2="${GAP * 5}" y2="0" stroke="var(--ink-3)" stroke-width="3"/>`, { at: { x: X0 - GAP / 2 + (GAP * 5) / 2, y: BASE }, hidden: true })
+    const bars = d.vals.map((v, i) => stage.shape('<rect x="-48" y="-1" width="96" height="1" rx="10"/>', { id: `bar${i + 1}`, kind: 'bar', role: 'value', at: { x: barX(i), y: BASE - 0.5 }, hidden: true }))
+    const tags = d.vals.map((v, i) => stage.value(0, { id: `tag${i + 1}`, role: 'value', at: { x: barX(i), y: BASE - 34 }, hidden: true }))
+    const days = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum'].map((s, i) => stage.label(s, { at: { x: barX(i), y: BASE + 36 }, size: 'sm', hidden: true }))
+    const meanLine = stage.shape(`<line x1="0" y1="0" x2="${GAP * 5}" y2="0" stroke-width="4" stroke-dasharray="14 10"/>`, { role: 'mean', at: { x: X0 - GAP / 2 + (GAP * 5) / 2, y: BASE - d.mean.value * PX }, hidden: true })
+    const meanTag = stage.value(d.mean, { role: 'mean', size: 'lg', at: { x: X0 + GAP * 5 - 20, y: BASE - d.mean.value * PX - 40 }, hidden: true })
+    const sumChip = stage.value(d.sum, { role: 'sum', size: 'lg', at: { region: 'top', u: 0.82, v: 0.45 }, hidden: true })
+    return { axis, bars, tags, days, meanLine, meanTag, sumChip }
   },
 
-  script(lesson, { table, result, caption }, d) {
-    lesson.chapter('what', 'Ne?', s => {
-      s.say('Bir dersin notu, sınavların düz ortalaması değildir. Her sınavın bir [[weight]] değeri vardır: o sınavdaki [[grade]] değerinin sonuca ne kadar katılacağını söyler.')
-      table.col('Ağırlık').highlight({ stagger: 'fast' })
+  script(lesson, { axis, bars, tags, days, meanLine, meanTag, sumChip }, d) {
+    const stage = lesson.stage
+    const H = v => v * PX
+
+    lesson.chapter('question', 'Soru', s => {
+      s.say('Beş gün boyunca her gün kaç saat çalıştığını yazdık. Peki "genelde günde kaç saat çalışıyorum" sorusunun tek bir cevabı olabilir mi?')
+      axis.show()
+      stage.select('label').show({ stagger: 'fast' })
+      // bars grow from the baseline one after another; their numbers count up while they grow
+      bars.forEach((b, i) => s.together(() => {
+        b.show({ speed: 'fast' })
+        b.to({ y: -H(d.vals[i].value), height: H(d.vals[i].value) }, { ease: 'back.out(1.4)' })
+        tags[i].show({ speed: 'fast' }).moveTo({ x: barX(i), y: BASE - H(d.vals[i].value) - 34 })
+        tags[i].setValue(d.vals[i])
+      }))
     })
 
-    lesson.chapter('why', 'Neden?', s => {
-      s.say('Final daha çok konuyu kapsadığı için daha ağır sayılır: burada vize %40, final %60. Ağırlıkların toplamı 1, yani %100.')
-      table.col('Ağırlık').pulse()
+    lesson.chapter('sum', 'Topla', s => {
+      s.say('Önce bütün [[value]] sayılarını bir araya topluyoruz: bu sayıya [[sum]] denir. ‹Toplam {{sum}} saat.›')
+      s.formula.show('\\slot{sum}{\\Sigma} = \\slot{d1}{x_1} + \\slot{d2}{x_2} + \\slot{d3}{x_3} + \\slot{d4}{x_4} + \\slot{d5}{x_5}', { words: 'toplam = bütün değerlerin art arda eklenmesi' })
+      s.step('sum-fly', { title: 'Sayılar formüle', level: 3 }, s => {
+        s.say('Her çubuğun sayısı formüldeki yerine uçuyor.')
+        tags.forEach((tg, i) => s.fly(tg, s.formula.slot(`d${i + 1}`)))
+      })
+      s.step('sum-born', { title: 'Toplam doğar', level: 3 }, s => {
+        s.say('Beş sayı birleşince [[sum]] ortaya çıkar: ‹{{sum}}›.')
+        s.formula.fill('sum', d.sum)
+        s.fly(d.sum, sumChip)
+        sumChip.show().pulse()
+      })
     })
 
-    lesson.chapter('compute', 'Hesap', s => {
-      s.say('Her not kendi ağırlığıyla çarpılır; bu çarpıma [[product]] diyoruz. İki katkıyı toplayınca [[wavg]] çıkar: **{{avg}}**.')
-      table.col('Ağırlık').unhighlight()
-      s.formula.show('\\slot{avg}{\\bar{x}} = \\slot{midterm}{x_1} \\cdot \\slot{wm}{w_1} + \\slot{final}{x_2} \\cdot \\slot{wf}{w_2}', { words: 'ortalama = vize × vize ağırlığı + final × final ağırlığı' })
+    lesson.chapter('divide', 'Böl', s => {
+      s.say('[[sum]] değerini [[count]] sayısına, yani 5 güne bölüyoruz. Çıkan sayı [[mean]]: ‹günde {{mean}} saat›.')
+      s.formula.show('\\slot{mean}{\\bar{x}} = \\frac{\\slot{sum}{\\Sigma}}{\\slot{n}{n}}', { words: 'ortalama = toplam ÷ adet' })
+      s.fly(sumChip, s.formula.slot('sum'))
+      s.formula.fill('n', d.n)
+      s.formula.fill('mean', d.mean)
+      s.together(() => { meanLine.show(); meanTag.show() })
+    })
 
-      s.step('mid', { title: 'Vize katkısı', level: 3 }, s => {
-        s.say('Vize notu {{midterm}}, ağırlığı {{wm}}. Çarpınca vizenin [[product]] değeri **{{pm}}** olur.')
-        table.row(1).dim()
-        s.fly(table.cell(0, 'Not'), s.formula.slot('midterm'))
-        s.fly(table.cell(0, 'Ağırlık'), s.formula.slot('wm'))
-        s.fly(d.pm, table.cell(0, 'Katkı'))
-      })
-
-      s.step('fin', { title: 'Final katkısı', level: 3 }, s => {
-        s.say('Final notu {{final}}, ağırlığı {{wf}}. Çarpınca finalin [[product]] değeri **{{pf}}** olur.')
-        table.row(1).undim()
-        table.row(0).dim()
-        s.fly(table.cell(1, 'Not'), s.formula.slot('final'))
-        s.fly(table.cell(1, 'Ağırlık'), s.formula.slot('wf'))
-        s.fly(d.pf, table.cell(1, 'Katkı'))
-      })
-
-      s.step('sum', { title: 'Toplam', level: 2 }, s => {
-        s.say('Katkıları topluyoruz: {{pm}} + {{pf}} = **{{avg}}**. Sonuç iki notun arasında, finale daha yakın; çünkü finalin ağırlığı daha büyük.')
-        table.row(0).undim()
-        table.col('Katkı').highlight()
-        s.formula.fill('avg', d.avg)
-        s.together(() => { result.show(); caption.show() })
-        result.pulse()
-      })
+    lesson.chapter('level', 'Eşitle', s => {
+      s.say('Ortalama ne demek? Çok çalışılan günler fazlalarını az çalışılan günlere verseydi, bütün çubuklar ‹tam {{mean}} saat› yüksekliğinde eşitlenirdi.')
+      // the key idea as a transformation: every bar levels out to the mean, its number counts to the mean
+      bars.forEach((b, i) => s.together(() => {
+        b.to({ y: -H(d.mean.value), height: H(d.mean.value) }, { ease: 'power3.inOut' })
+        tags[i].moveTo({ x: barX(i), y: BASE - H(d.mean.value) - 34 })
+        tags[i].setValue(d.mean)
+      }))
+      bars.forEach(b => b.recolor('mean'))
     })
 
     lesson.chapter('pattern', 'Kalıp', s => {
-      s.say('Kalıp hep aynı: **her değeri ağırlığıyla çarp → katkıları topla**. Ağırlıkların toplamı 1 olduğu için ayrıca bölmeye gerek kalmadı.')
-      table.col('Katkı').unhighlight()
-      lesson.memorize({ title: 'Ağırlıklı ortalama', formula: '\\bar{x} = \\sum w_i \\cdot x_i', words: 'her not × ağırlığı, sonra hepsini topla', why: 'Ağırlıklar toplamı 1 ise sonuç notların arasında kalır.' })
+      s.say('Kalıp hep aynı: **önce topla, sonra adede böl**. Ortalama, değerlerin en küçüğü ile en büyüğü arasında bir yerde durur.')
+      s.formula.show('\\bar{x} = \\frac{x_1 + x_2 + \\cdots + x_n}{n}', { words: 'ortalama = toplam ÷ adet' })
+      lesson.memorize({ title: 'Aritmetik ortalama', formula: '\\bar{x} = \\frac{\\sum x_i}{n}', words: 'bütün değerleri topla, kaç tane olduğuna böl', why: 'Herkes eşit paylaşsaydı her birine düşecek miktar.' })
     })
   },
 
   practice: {
-    generate: r => ({ midterm: r.int(0, 20) * 5, final: r.int(0, 20) * 5 }),
+    generate: r => ({ d1: r.int(0, 10), d2: r.int(0, 10), d3: r.int(0, 10), d4: r.int(0, 10), d5: r.int(0, 10) }),
     tasks: [
-      { id: 'p1', prompt: 'Vize {{midterm}} ise vizenin katkısı kaç?', answer: 'pm', tolerance: 0.01 },
-      { id: 'p2', prompt: 'Final {{final}} ile ağırlıklı ortalama kaç?', answer: 'avg', tolerance: 0.01 },
+      { id: 'p1', prompt: 'Günler: {{d1}}, {{d2}}, {{d3}}, {{d4}}, {{d5}} saat. Toplam kaç?', answer: 'sum', tolerance: 0.01 },
+      { id: 'p2', prompt: 'Ortalama kaç saat?', answer: 'mean', tolerance: 0.01 },
     ],
   },
 })

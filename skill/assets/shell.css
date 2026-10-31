@@ -149,3 +149,6 @@ table.dt{border-collapse:collapse;width:100%;font-size:13px;margin-bottom:12px} 
 .err-card{max-width:760px;background:var(--surface);color:var(--ink);border-radius:14px;padding:22px 26px;box-shadow:var(--shadow-2)}
 .err-card h2{margin:0 0 8px;color:var(--bad);font-size:18px} .err-card pre{white-space:pre-wrap;background:var(--surface-2);padding:10px;border-radius:8px;font-size:12px}
 @media (prefers-reduced-motion:reduce){ *{transition:none!important} }
+.say-text .late{opacity:0;transition:opacity .35s ease}
+.say-text.reveal .late{opacity:1}
+

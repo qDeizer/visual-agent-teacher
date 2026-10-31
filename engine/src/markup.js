@@ -4,9 +4,10 @@
 //   {{valId}}           a value from the model trace (or an input)
 //   {{valId:2}}         with 2 decimals · {{valId:int}} rounded · {{valId:pct}} as a percentage
 //   **bold**
+//   ‹the result›        hidden until the step's animation has finished (do not announce a result before it is shown)
 import { VatError, fmt, escapeHtml } from './util.js'
 
-const RE = /\[\[([\w-]+)(?:\|([^\]]+))?\]\]|\{\{([\w.-]+)(?::([\w]+))?\}\}|\*\*([^*]+)\*\*/g
+const RE = /\[\[([\w-]+)(?:\|([^\]]+))?\]\]|\{\{([\w.-]+)(?::([\w]+))?\}\}|\*\*([^*]+)\*\*|‹([^›]+)›/g
 
 export function createMarkup(ctx) {
   const lang = () => ctx.lang
@@ -35,22 +36,23 @@ export function createMarkup(ctx) {
   }
   return {
     plain(s) {
-      return String(s).replace(RE, (m, tid, shown, vid, f, bold) => tid ? term(tid, shown) : vid ? value(vid, f) : this.plain(bold))
+      return String(s).replace(RE, (m, tid, shown, vid, f, bold, late) => tid ? term(tid, shown) : vid ? value(vid, f) : this.plain(bold ?? late))
     },
     html(s) {
       let out = '', last = 0
       const str = String(s)
       for (const m of str.matchAll(RE)) {
         out += escapeHtml(str.slice(last, m.index))
-        const [, tid, shown, vid, f, bold] = m
+        const [, tid, shown, vid, f, bold, late] = m
         if (tid) out += `<button type="button" class="term" data-term="${escapeHtml(tid)}">${escapeHtml(term(tid, shown))}</button>`
         else if (vid) out += `<span class="val">${escapeHtml(value(vid, f))}</span>`
+        else if (late !== undefined) out += `<span class="late">${this.html(late)}</span>`
         else out += `<b>${this.html(bold)}</b>`
         last = m.index + m[0].length
       }
       return out + escapeHtml(str.slice(last))
     },
-    terms(s) { return [...String(s).matchAll(RE)].flatMap(m => m[1] ? [m[1]] : m[5] ? this.terms(m[5]) : []) },
+    terms(s) { return [...String(s).matchAll(RE)].flatMap(m => m[1] ? [m[1]] : m[5] ? this.terms(m[5]) : m[6] ? this.terms(m[6]) : []) },
     check(s) {
       const out = this.plain(s)
       const left = out.match(/\{\{[^}]*\}\}|\[\[[^\]]*\]\]|\*\*/)

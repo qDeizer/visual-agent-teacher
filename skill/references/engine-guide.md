@@ -22,7 +22,7 @@ actions. The engine handles Next / Back / speed / detail level / scrubbing / tin
 **Never hard-code a number that comes from the model.** Use `{{valId}}` in text and pass `Val`s to verbs. When the learner
 changes an input, the whole lesson is recomputed and everything stays consistent.
 
-Forbidden: `Math.random`, `Date`, timers, `async/await`, `fetch`, `import`, DOM access, HTML/CSS, screen-pixel positions.
+Forbidden: `Math.random`, `Date`, timers, `async/await`, `fetch`, `import`, DOM access, HTML/CSS.
 The build rejects them with a message telling you what to use instead.
 
 ## 2. Teaching rules (non-negotiable)
@@ -59,13 +59,16 @@ lesson.chapter('hidden', 'Gizli katman', s => {              // chapter = level 
 })
 ```
 
-- The learner chooses detail 1 / 2 / 3. A step is its own stop when `level ≤ chosen`; otherwise it plays (faster) inside
-  the stop before it, with that stop's narration.
+- Every chapter and step is a stop. The learner navigates with three rows of ‹ › buttons: **Chapter** (level 1),
+  **Step** (level ≤ 2) and **Micro** (every stop). A coarse jump plays the whole unit quickly and shows the narration of
+  that unit's chapter/step, so write level-1/2 narration as a summary of everything inside.
 - **Every chapter and step needs its own `s.say(...)`, written for its level.** A parent's text summarises its children.
 - **Put a step's own actions before its child steps.** Actions after a child belong to the previous stop (build warns).
-- `s.summary(() => {...})` = what a parent shows when all its children are folded (their effects are applied instantly after).
 
 ## 4. Objects, verbs, effects, selection
+
+**Read `motion-grammar.md` first.** Prefer verbs that transform (`to`, `moveTo`, `along`, `setValue`, `fly`, `split`,
+`recolor`, camera) over verbs that only fade (`show/hide/dim`).
 
 - **Objects persist.** Never re-create something that exists — move it, change it, tag it, dim it.
 - Verbs: `show hide dim undim highlight unhighlight pulse recolor remove moveTo along scaleTo setValue setText tag untag split clone`.
@@ -81,6 +84,9 @@ lesson.chapter('hidden', 'Gizli katman', s => {              // chapter = level 
   colour for a concept in the scene, in labels and in formula slots). Also `neutral accent danger success warn`.
 
 ## 5. Placement and layout
+
+- World coordinates: `{ x, y }` with x 0–1600 (left → right) and y 0–770 (top → bottom). Use them freely for your own
+  drawings (see `example-lesson.js`). Regions and relative placements are conveniences.
 
 - Regions (world 1600 × 770): `main` (all), `center`, `left`, `right`, `top`, `bottom`, `inset` (top-right corner).
   `{ region: 'main', u: 0.3, v: 0.5 }` with u, v in 0..1. Components (table, plot, net, graph, sequence …) **fill their

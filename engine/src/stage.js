@@ -3,6 +3,7 @@
 import { VatError, guard, fmt, clamp, escapeHtml } from './util.js'
 import { Obj, Sel, rec, svg, dur, T, S, DUR } from './core.js'
 import { roleVar, assignRoles } from './design.js'
+import { M as MO, EASE, arcLift } from './motion.js'
 
 export const ROOT = { w: 1600, h: 900 }
 export const WORLD = { w: 1600, h: 770 }
@@ -141,7 +142,8 @@ export class Stage {
       if (!p._toWorld) throw new VatError(`{ plot } placement needs a plot created with stage.plot().`)
       return p._toWorld(place.x, place.y)
     }
-    if ('x' in place || 'y' in place) throw new VatError(`Raw {x, y} positions are not allowed (no screen pixels). Use a region ('left', 'main', …), { region, u, v } with u,v in 0..1, { near: obj, side }, or { plot, x, y } for plot coordinates.`)
+        if (Number.isFinite(place.x) && Number.isFinite(place.y)) return { x: place.x, y: place.y } // world units (1600 × 770)
+    if ('x' in place || 'y' in place) throw new VatError(`Placement { x, y } needs both numbers (world units: x 0..1600, y 0..770).`)
     throw new VatError(`Invalid placement ${JSON.stringify(place)}. See Placement in engine-api.d.ts.`)
   }
   _pathPoints(path, plot) {
@@ -220,6 +222,7 @@ export class Stage {
       hidden: true, layer: extra.layer, text: extra.text, space: extra.space, parent: extra.parent, origin: extra.origin,
     })
     if (extra.fit) o._fit = extra.fit.bind(o)
+    if (extra.drawEl) { o._drawEl = extra.drawEl; o._drawLen = extra.drawLen }
     if (extra.points) o._points = extra.points
     if (extra.at0) { o._st8.x = extra.at0.x; o._st8.y = extra.at0.y }
     else {
@@ -232,8 +235,7 @@ export class Stage {
       o._exists = true
       rec.ev({ type: 'exist', obj: o.id, on: true })
       if (!opts.hidden) {
-        if (extra.drawIn) rec.par(() => { o._setVis(true, { speed: 'fast' }); extra.drawIn(o) })
-        else o._setVis(true, { speed: 'fast' })
+        o._setVis(true)
       }
     } else {
       o._st8.vis = !opts.hidden
@@ -258,6 +260,7 @@ export class Stage {
     for (const n of [...doc.documentElement.childNodes]) inner.appendChild(document.importNode(n, true))
     if (o.kind && BUILTIN_KINDS.has(o.kind)) throw new VatError(`shape kind '${o.kind}' is reserved by a built-in component. Choose another kind name.`)
     const obj = this._create(o.kind || 'shape', body, o, {})
+    obj._prim = inner.firstElementChild
     this._paint(obj, body, o.role, 'soft', 'main')
     obj.kind = o.kind || 'shape'
     return obj._api
@@ -347,7 +350,7 @@ export class Stage {
     const L = curve ? approxLen(pts) : len
     const obj = this._create('arrow', body, o, {
       layer: 'edges', text, pos: { x: (p1.x + p2.x) / 2 + (curve ? (cx - mx) / 2 : 0), y: (p1.y + p2.y) / 2 + (curve ? (cy - my) / 2 : 0) }, points: pts,
-      drawIn: o.dashed ? null : () => rec.tw(path, { attr: { 'stroke-dasharray': `${L} ${L}`, 'stroke-dashoffset': L } }, { attr: { 'stroke-dasharray': `${L} ${L}`, 'stroke-dashoffset': 0 } }, DUR.normal),
+      drawEl: o.dashed ? null : path, drawLen: L,
     })
     obj._paints.push({ el: path, attr: 'stroke', variant: 'main' })
     obj._flowEl = path
@@ -410,20 +413,30 @@ export class Stage {
       dst = tobj._space === 'hud' ? tobj._center() : this._worldToHud(tobj._center())
       land = () => { if (tobj._text && VALUE_KINDS.has(tobj.kind)) tobj.setText(text, { speed: 'fast' }); else tobj.pulse({ speed: 'fast' }) }
     }
-    if (!src) src = { x: dst.x, y: dst.y - 70 }
+    let srcObj = from && from._st8 ? from : (from && typeof from.fmt === 'function' ? this._valIndex.get(from.id) : this._objs.get(from?.id))
+    if (!src) { src = { x: dst.x, y: dst.y - 90 }; this._warnings.push(`fly: value '${text}' is not shown anywhere before it flies; it appears above its target. Show its source first (e.g. a value chip or a cell) so the learner sees where it comes from.`) }
     const g = svg('g', { class: 'vat-chip', style: 'visibility:hidden;opacity:0' }, this._hudLayers.fly)
-    const w = this.measureText(text, FONT.md, 650) + 22
-    svg('rect', { x: -w / 2, y: -17, width: w, height: 34, rx: 9, fill: 'var(--surface)', stroke: roleVar(this, role, 'main'), 'stroke-width': 2.5 }, g)
+    const w = this.measureText(text, FONT.md, 650) + 24
+    svg('rect', { x: -w / 2, y: -20, width: w, height: 40, rx: 10, fill: 'var(--surface)', stroke: roleVar(this, role, 'main'), 'stroke-width': 2.5 }, g)
     this._textEl(g, text, { size: FONT.md, weight: 650, fill: roleVar(this, role, 'ink') })
-    g.setAttribute('transform', T(src.x, src.y))
-    const d = dur(o?.speed, 'normal') * 1.15
+    g.setAttribute('transform', `${T(src.x, src.y)} scale(1)`)
+    const d = o?.speed !== undefined ? dur(o.speed) : MO.travel
+    const lift = arcLift(src, dst)
     rec.seq(() => {
-      rec.tw(g, { autoAlpha: 0 }, { autoAlpha: 1 }, 0.15, 'power1.out')
-      rec.tw(g, { attr: { transform: T(src.x, src.y) } }, { attr: { transform: T(dst.x, dst.y) } }, d, 'power2.inOut')
-      rec.par(() => { rec.tw(g, { autoAlpha: 1 }, { autoAlpha: 0 }, 0.18); land() })
+      // anticipation: the source swells a little, the chip lifts off
+      rec.par(() => {
+        if (srcObj && srcObj._e) rec.seq(() => {
+          rec.tw(srcObj._e, { attr: { transform: srcObj._E(1, 0) } }, { attr: { transform: srcObj._E(1.08, 0) } }, MO.lead, 'power2.out')
+          rec.tw(srcObj._e, { attr: { transform: srcObj._E(1.08, 0) } }, { attr: { transform: srcObj._E(1, 0) } }, MO.lead * 1.5, 'power2.inOut')
+        })
+        rec.tw(g, { autoAlpha: 0 }, { autoAlpha: 1 }, MO.lead, 'power1.out')
+      })
+      // flight along an arc (slightly smaller in the air)
+      rec.tw(g, { attr: { transform: `${T(src.x, src.y)} scale(1)` } }, { vatArc: { from: src, to: dst, lift } }, d, EASE.travel)
+      // landing: the chip melts into the target, which takes the value with a small bounce
+      rec.par(() => { rec.tw(g, { autoAlpha: 1 }, { autoAlpha: 0 }, MO.settle, 'power1.in'); land() })
     })
   }
-
   // ── follow ──
   _withFollow(obj, fn, o) {
     if (this._follow !== obj || !rec.live) return fn()

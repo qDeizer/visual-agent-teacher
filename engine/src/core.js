@@ -10,6 +10,7 @@
 // compute their start values from it. layout.js turns the recorded tree into a GSAP timeline per detail level.
 import { VatError, guard, fmt } from './util.js'
 import { roleVar } from './design.js'
+import { M, EASE, numericText, resolveColor } from './motion.js'
 
 export const DUR = { fast: 0.35, normal: 0.6, slow: 1.0 }
 export const DIM = 0.22
@@ -86,7 +87,8 @@ export class Obj {
 
     const el = this._el = svg('g', { class: `vo vo-${o.kind}`, 'data-id': id })
     this._s = svg('g', { class: 'vo-s' }, el)
-    this._z = svg('g', { class: 'vo-z' }, this._s)
+    this._e = svg('g', { class: 'vo-e' }, this._s) // enter/exit channel (pop in, shrink out)
+    this._z = svg('g', { class: 'vo-z' }, this._e)
     this._b = svg('g', { class: 'vo-b' }, this._z)
     this._j = svg('g', { class: 'vo-j' }, this._b)
     this._l = svg('g', { class: 'vo-l' }, this._j)
@@ -110,6 +112,7 @@ export class Obj {
     window.gsap.set(this._z, { attr: { transform: S(z) }, opacity: zVis })
     window.gsap.set(this._l, { opacity: 1 })
     this._measure()
+    window.gsap.set(this._e, { attr: { transform: this._E(1, 0) } })
     stage._register(this)
     this._api = guard(this, `Obj '${id}' (${o.kind})`)
   }
@@ -117,6 +120,12 @@ export class Obj {
   _S(sx, sy = sx) {
     const s = S(sx, sy)
     return this._o ? `${T(this._o.x, this._o.y)} ${s} ${T(-this._o.x, -this._o.y)}` : s
+  }
+
+  /** Enter/exit transform about the object's own centre: scale k, offset dy. */
+  _E(k, dy) {
+    const cx = (this._bb?.x ?? 0) + (this._bb?.w ?? 0) / 2, cy = (this._bb?.y ?? 0) + (this._bb?.h ?? 0) / 2
+    return `${T(cx, cy + dy)} ${S(k)} ${T(-cx, -cy)}`
   }
 
   // ── read-only logical state ──
@@ -154,11 +163,23 @@ export class Obj {
   }
 
   // ── appearance ──
+  /** Appear: pop in (rise + scale with a little overshoot), lines draw themselves. Disappear: quick shrink + fade. */
   _setVis(on, o) {
     const from = this._st8.vis ? 1 : 0, to = on ? 1 : 0
     if (from === to) return
     this._st8.vis = on
-    rec.tw(this._el, { autoAlpha: from }, { autoAlpha: to }, dur(o?.speed, 'fast'), 'power1.inOut')
+    const k = o?.speed !== undefined ? dur(o.speed) / DUR.normal : 1
+    if (on) rec.par(() => {
+      rec.tw(this._el, { autoAlpha: 0 }, { autoAlpha: 1 }, M.enter * 0.55 * k, 'power1.out')
+      if (this._drawEl) {
+        const L = this._drawLen || 400
+        rec.tw(this._drawEl, { attr: { 'stroke-dasharray': `${L} ${L}`, 'stroke-dashoffset': L } }, { attr: { 'stroke-dasharray': `${L} ${L}`, 'stroke-dashoffset': 0 } }, M.draw * k, 'power2.inOut')
+      } else rec.tw(this._e, { attr: { transform: this._E(0.82, 10) } }, { attr: { transform: this._E(1, 0) } }, M.enter * k, EASE.enter)
+    })
+    else rec.par(() => {
+      rec.tw(this._el, { autoAlpha: 1 }, { autoAlpha: 0 }, M.exit * k, EASE.exit)
+      rec.tw(this._e, { attr: { transform: this._E(1, 0) } }, { attr: { transform: this._E(0.9, 0) } }, M.exit * k, EASE.exit)
+    })
   }
   show(o) { this._delay(o); this._setVis(true, o); return this._api }
   hide(o) { this._delay(o); this._setVis(false, o); return this._api }
@@ -200,7 +221,12 @@ export class Obj {
         const from = p.el.getAttribute(p.attr + '-role-now') || p.el.getAttribute(p.attr)
         const to = roleVar(this._st, role, p.variant)
         p.el.setAttribute(p.attr + '-role-now', to)
-        rec.set(p.el, { attr: { [p.attr]: from } }, { attr: { [p.attr]: to } })
+        // colours are CSS variables: tween the resolved colours, then settle on the variable (theme-aware)
+        if (rec.live) rec.seq(() => {
+          rec.tw(p.el, { attr: { [p.attr]: resolveColor(from) } }, { attr: { [p.attr]: resolveColor(to) } }, M.color, 'power1.inOut')
+          rec.set(p.el, { attr: { [p.attr]: resolveColor(to) } }, { attr: { [p.attr]: to } })
+        })
+        else rec.set(p.el, { attr: { [p.attr]: from } }, { attr: { [p.attr]: to } })
       }
     })
     this._role = role
@@ -236,19 +262,19 @@ export class Obj {
   along(path, o = {}) {
     this._delay(o)
     const pts = this._st._pathPoints(path, o.plot)
-    const total = dur(o.speed, 'slow') * 1.4
     const c0 = this._center()
     const ox = this._st8.x - c0.x, oy = this._st8.y - c0.y
-    this._st._withFollow(this, () => rec.seq(() => {
-      const segs = pts.length - 1
-      for (let i = 1; i <= segs; i++) {
-        const a = pts[i - 1], b = pts[i]
-        const fx = a.x + ox, fy = a.y + oy, tx = b.x + ox, ty = b.y + oy
-        rec.tw(this._el, { attr: { transform: T(i === 1 ? this._st8.x : fx, i === 1 ? this._st8.y : fy) } }, { attr: { transform: T(tx, ty) } }, total / segs, 'none')
-      }
-      const last = pts[pts.length - 1]
+    // start from where the object is now, then follow the path with one easing over its whole length
+    const all = [{ x: c0.x, y: c0.y }, ...pts]
+    let len = 0
+    for (let i = 1; i < all.length; i++) len += Math.hypot(all[i].x - all[i - 1].x, all[i].y - all[i - 1].y)
+    const total = o.speed !== undefined ? dur(o.speed) : Math.min(2.4, Math.max(M.travel, len / 520))
+    const from = { x: this._st8.x, y: this._st8.y }
+    this._st._withFollow(this, () => {
+      rec.tw(this._el, { attr: { transform: T(from.x, from.y) } }, { vatPoly: { pts: all, dx: ox, dy: oy } }, total, o.ease || 'sine.inOut')
+      const last = all[all.length - 1]
       this._st8.x = last.x + ox; this._st8.y = last.y + oy
-    }), o)
+    }, o)
     return this._api
   }
   scaleTo(k, o) {
@@ -272,14 +298,45 @@ export class Obj {
     const to = this._st._plain(String(text))
     if (from === to) return this._api
     this._curText = to
-    const d = dur(o?.speed, 'fast')
-    rec.seq(() => {
-      rec.tw(el, { opacity: 1 }, { opacity: 0 }, d * 0.4, 'power1.in')
-      rec.set(el, { textContent: from }, { textContent: to })
-      if (this._fit) this._fit(to)
-      rec.tw(el, { opacity: 0 }, { opacity: 1 }, d * 0.6, 'power1.out')
-    })
-    if (!rec.live) { el.textContent = to; if (this._fit) this._fit(to) }
+    if (!rec.live) { el.textContent = to; if (this._fit) this._fit(to); return this._api }
+    const k = o?.speed !== undefined ? dur(o.speed) / DUR.normal : 1
+    if (numericText(from) && numericText(to)) {
+      // numbers count from the old value to the new one
+      rec.par(() => {
+        rec.tw(el, {}, { vatNum: { from, to, lang: this._st._ctx.lang } }, M.count * k, EASE.count)
+        if (this._fit) this._fit(to)
+      })
+    } else {
+      // words slide: old text leaves upward, new text arrives from below
+      rec.seq(() => {
+        rec.tw(el, { opacity: 1, attr: { transform: 'translate(0 0)' } }, { opacity: 0, attr: { transform: 'translate(0 -10)' } }, 0.14 * k, 'power2.in')
+        rec.set(el, { textContent: from }, { textContent: to })
+        if (this._fit) this._fit(to)
+        rec.tw(el, { opacity: 0, attr: { transform: 'translate(0 10)' } }, { opacity: 1, attr: { transform: 'translate(0 0)' } }, 0.22 * k, 'power2.out')
+      })
+    }
+    return this._api
+  }
+
+  /** Tween any SVG attributes of the object's main shape (or of a part): obj.to({ r: 40, fill: 'accent' }).
+   *  Colours may be roles. Paths morph when the new `d` has the same command structure. */
+  to(attrs, o = {}) {
+    this._delay(o)
+    if (!attrs || typeof attrs !== 'object') throw new VatError(`obj.to({ attr: value, … }) needs an object of SVG attributes (r, width, height, x, y, d, fill, stroke, opacity…).`)
+    const target = o.part ? this._st._objOf(this.part(o.part))._body : this._prim || this._body.querySelector('rect,circle,ellipse,path,line,polygon,polyline,text') || this._body
+    target._now = target._now || {}
+    const from = {}, to = {}
+    for (const [k, v0] of Object.entries(attrs)) {
+      let v = v0
+      if ((k === 'fill' || k === 'stroke') && typeof v === 'string' && !/^(#|rgb|hsl|var\(|none)/.test(v)) { this._st._checkRole(v); v = roleVar(this._st, v, k === 'fill' ? 'soft' : 'main') }
+      const cur = target._now[k] ?? target.getAttribute(k) ?? (k === 'opacity' ? 1 : 0)
+      const isColor = k === 'fill' || k === 'stroke'
+      from[k] = isColor ? resolveColor(cur) : cur
+      to[k] = isColor ? resolveColor(v) : v
+      target._now[k] = v
+    }
+    if (!rec.live) { for (const [k, v] of Object.entries(to)) target.setAttribute(k, v); this._measure(); return this._api }
+    rec.tw(target, { attr: from }, { attr: to }, o.speed !== undefined ? dur(o.speed) : M.travel * 0.8, o.ease || 'power2.inOut')
     return this._api
   }
 
@@ -373,7 +430,8 @@ export class Sel {
   toArray() { return this._objs.map(o => o._api) }
   each(f) { this._objs.forEach((o, i) => f(o._api, i)) }
   _apply(verb, args, o) {
-    const stagger = o?.stagger !== undefined ? dur(o.stagger) : 0
+    // a cascade by default (never all at once, never slow): ~55 ms apart, at most 0.4 s for the whole group
+    const stagger = o?.stagger !== undefined ? dur(o.stagger) : Math.min(0.055, 0.4 / Math.max(1, this._objs.length - 1))
     rec.par(() => this._objs.forEach((obj, i) => rec.seq(() => {
       if (stagger && i) rec.wait(stagger * i)
       obj[verb](...args)

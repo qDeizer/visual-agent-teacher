@@ -181,8 +181,8 @@ export class Player {
     const i = this.idx + 1
     if (i >= this.stops.length) { this.jump(0); return }
     this.idx = i
-    this._showStop(i)
     this.playing = true
+    this._showStop(i)
     this._setPlaying(true)
     this.lay.tl.seek(this.stops[i - 1].end + 0.001).play()
     this._tick()
@@ -194,13 +194,13 @@ export class Player {
     const to = this.stops[target].end, from = tl.time()
     const sayNode = L < 3 ? this.stops[target].unitNode[L] : null
     this.idx = target
-    this._showStop(target, sayNode)
     this.playing = true
+    this._showStop(target, sayNode)
     this._setPlaying(true)
     window.gsap.to(tl, {
       time: to, duration: Math.min(1.6, Math.max(0.35, Math.abs(to - from) * 0.12)), ease: 'power2.inOut', overwrite: true,
       onUpdate: () => this.effects.sync(tl.time()),
-      onComplete: () => { this.playing = false; this._setPlaying(false); tl.pause(); this.effects.sync(to); this._panelsRender() },
+      onComplete: () => { this.playing = false; this._setPlaying(false); tl.pause(); this.effects.sync(to); this.$.say.classList.add('reveal'); this._panelsRender() },
     })
   }
   _setPlaying(on) { this.$.nav.classList.toggle('playing', on) }
@@ -215,6 +215,7 @@ export class Player {
     this._setPlaying(false)
     this.effects.sync(this.lay.tl.time())
     if (i !== this.idx) { this.idx = i; this._showStop(i) }
+    this.$.say.classList.add('reveal')
     this._panelsRender()
   }
   setSpeed(v) { this.speed = v; this.$.speedOut.textContent = `${v}×`; this.lay?.tl.timeScale(v * BASE_SPEED) }
@@ -229,6 +230,7 @@ export class Player {
     const el = this.$.say
     el.innerHTML = html
     el.dataset.stop = s.id
+    el.classList.toggle('reveal', !this.playing)
     // keep the narrator's height fixed: shrink the text instead of growing the box (the stage never resizes)
     el.style.fontSize = ''
     for (let fs = 17; fs >= 13 && el.scrollHeight > el.clientHeight + 1; fs -= 0.5) el.style.fontSize = fs + 'px'

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Test a built lab in a headless browser.
-//   node qa.mjs path/to/lab.html [--sheet] [--shots] [--no-verify]
+//   node qa.mjs path/to/lab.html [--sheet] [--film] [--shots] [--no-verify]
 // Checks: runtime errors, model checks, "watching a step == jumping to it" (all detail levels),
 // layout problems (overlapping/clipped/tiny text, NaN), real playback. Writes qa-report.json next to the HTML
 // and, with --shots, one screenshot per stop (normal detail) into qa-shots/; with --sheet also contact sheets\n// (6 stops per image) into qa-sheets/ — review those instead of single shots when images are limited.
 // Exit code 0 = no errors; 1 = errors (each message names the step id and what is wrong).
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { launch } from './lib/cdp.mjs'
@@ -17,6 +17,7 @@ const html = resolve(file)
 if (!existsSync(html)) { console.error(`✗ Not found: ${html}`); process.exit(1) }
 const shots = args.includes('--shots')
 const sheet = args.includes('--sheet')
+const film = args.includes('--film')
 const outDir = dirname(html)
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
@@ -48,6 +49,13 @@ try {
       else if (x.kind === 'clipped-zoomed') report.warnings.push(`While the camera is zoomed, text is cut at the edge of the view at ${where}: "${x.text}" (object ${x.owner}). Fine if intended; otherwise frame it fully.`)
       else if (x.kind === 'text-too-small') report.warnings.push(`Text rendered at ${x.px}px (too small) at ${where}: "${x.text}" (object ${x.owner}).`)
     }
+    // motion check: a stop whose animation only fades things in/out plays like a slide
+    const motion = await b.eval('window.__vat.motion()')
+    const slide = motion.filter(m => m.fade > 0 && m.move === 0), still = motion.filter(m => m.fade === 0 && m.move === 0)
+    report.motion = { stops: motion.length, slideLike: slide.map(m => m.id), still: still.map(m => m.id) }
+    var motionAll = motion
+    if (slide.length) report.warnings.push(`Slide-show steps (${slide.length}/${motion.length}) only fade things in/out: ${slide.slice(0, 8).map(m => m.id).join(', ')}${slide.length > 8 ? ' …' : ''}. Transform instead: move, grow (to), count (setValue), fly a number, split, draw a path, camera.focus.`)
+    if (still.length > motion.length * 0.3) report.warnings.push(`${still.length}/${motion.length} steps have no animation at all (${still.slice(0, 6).map(m => m.id).join(', ')}…). Every step should show something happening.`)
     // real playback of the first stops (catches problems that seeking hides)
     await b.eval('window.__vat.go(0, 2)')
     await b.eval(`document.querySelector('.speed input').value = 2.5; document.querySelector('.speed input').dispatchEvent(new Event('input'))`)
@@ -58,8 +66,9 @@ try {
       for (let k = 0; k < 60; k++) { await sleep(100); idx = await b.eval(`(document.querySelector('.count').textContent.match(/(\\d+)\\s*\\//) || [])[1]`); if (await b.eval(`!document.querySelector('.nav').classList.contains('playing')`)) break }
       if (Number(idx) !== i + 1) { report.errors.push(`Playback: after pressing Continue ${i} time(s) the counter shows step ${idx}, expected ${i + 1}.`); break }
     }
-    if (shots || sheet) {
+    if (shots || sheet || film) {
       const dir = join(outDir, 'qa-shots')
+      for (const d of ['qa-shots', 'qa-sheets', 'qa-film']) rmSync(join(outDir, d), { recursive: true, force: true })
       mkdirSync(dir, { recursive: true })
       const stops = await b.eval('window.__vat.go(0, 2), window.__vat.stops()')
       for (let i = 0; i < stops.length; i++) {
@@ -89,6 +98,27 @@ try {
           report.sheets = [...(report.sheets || []), join('qa-sheets', name)]
         }
       }
+    }
+  }
+  if (film && report.motion) {
+    const fdir = join(outDir, 'qa-film'); mkdirSync(fdir, { recursive: true })
+    const busiest = motionAll.map((m, i) => ({ ...m, i })).sort((a, b2) => b2.move - a.move).slice(0, 2)
+    for (const st of busiest) {
+      await b.goto(pathToFileURL(html).href)
+      for (let k = 0; k < 100 && !(await b.eval('!!(window.__vat && window.__vat.ready)').catch(() => false)); k++) await sleep(100)
+      const frames = []
+      for (const fr of [0.05, 0.2, 0.35, 0.5, 0.7, 1]) {
+        await b.eval(`window.__vat.frame(${st.i}, ${fr})`); await sleep(40)
+        const name = `f-${st.id.replace(/[^\w-]/g, '_')}-${Math.round(fr * 100)}.png`
+        writeFileSync(join(fdir, name), await b.screenshot()); frames.push({ name, fr })
+      }
+      const tileW = 466, tileH = Math.round(tileW * 900 / 1440)
+      const page = join(fdir, `_film-${st.id}.html`)
+      writeFileSync(page, `<!doctype html><meta charset=utf-8><style>body{margin:0;padding:8px;background:#fff;font:600 15px system-ui;display:grid;grid-template-columns:repeat(3,${tileW}px);gap:8px}figure{margin:0}figcaption{height:22px}img{width:${tileW}px;height:${tileH}px;border:1px solid #ccd;display:block}</style>` + frames.map(f => `<figure><figcaption>${st.id} · ${Math.round(f.fr * 100)}%</figcaption><img src="${pathToFileURL(join(fdir, f.name)).href}"></figure>`).join(''))
+      await b.goto(pathToFileURL(page).href); await sleep(150)
+      const out = `film-${st.id.replace(/[^\w-]/g, '_')}.png`
+      writeFileSync(join(fdir, out), await b.screenshot({ x: 0, y: 0, width: 3 * tileW + 32, height: 2 * (tileH + 30) + 16 }))
+      report.film = [...(report.film || []), join('qa-film', out)]
     }
   }
   for (const m of b.console) if (m.type === 'exception' || m.type === 'error') report.errors.push(`Browser console ${m.type}: ${m.text.split('\n')[0]}`)

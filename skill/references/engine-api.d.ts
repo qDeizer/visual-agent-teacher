@@ -10,13 +10,17 @@
  *  - `script` runs SYNCHRONOUSLY. Each verb called inside a chapter/step build function is appended to that step's
  *    timeline in call order (one after another). Use s.together(() => { ... }) for simultaneous actions.
  *    No async/await, no timers, no Math.random/Date.
- *  - Positions are never screen pixels: use regions, { region, u, v }, { near, side }, { between }, { inside },
- *    or plot coordinates { plot, x, y }.
+ *  - Positions are world units ({ x, y }: x 0–1600, y 0–770), regions, { region, u, v }, { near, side }, { between },
+ *    { inside } or plot coordinates { plot, x, y }. Never screen pixels.
  *  - Unknown members throw a clear error ("Obj has no member 'bol'. Did you mean 'split'?").
  *
+ * MOTION (see motion-grammar.md): show() pops in / draws lines, setValue() counts, fly() arcs and lands, moveTo/along
+ *  travel, to() tweens any attribute (sizes, paths, colours), recolor() fades colours, selections cascade. Consecutive
+ *  actions overlap slightly. A stop that only fades things in/out plays like a slide: QA warns.
+ *
  * STOPS AND DETAIL LEVELS
- *  - The learner picks detail 1 (overview), 2 (normal), 3 (micro). A chapter is always a stop. A step is a stop when
- *    its level ≤ chosen detail; otherwise it is folded into the stop before it (played faster, its narration hidden).
+ *  - Every chapter and step is a stop. The learner navigates with three rows: Chapter (level 1), Step (level ≤ 2) and
+ *    Micro (every stop). A coarse jump plays the whole unit quickly and shows the narration of that unit's node.
  *  - Every chapter/step MUST have its own s.say(...) written for its level (a parent's text is a summary of its
  *    children, not a copy). Build fails otherwise.
  *  - Put a step's own actions BEFORE its child steps. Actions written after a child step belong to the previous stop.
@@ -155,7 +159,9 @@ declare global {
       | { near: Obj; side: Side; gap?: Gap }
       | { between: [Obj, Obj] }
       | { inside: Obj }
-      | { plot: Plot; x: number; y: number };
+      | { plot: Plot; x: number; y: number }
+      /** World units: x 0–1600 (left → right), y 0–770 (top → bottom). */
+      | Point;
 
     /** How an object reacts to camera zoom: 'world' grows fully, 'screen' keeps its size, 'damped' grows a little.
      *  Defaults: shapes/components 'world'; labels, values, boxes 'damped'. */
@@ -207,7 +213,8 @@ declare global {
       dot(opts?: CommonOpts & { label?: string }): Obj;
       /** Rounded box with text (markup allowed). */
       box(text: string, opts?: TextOpts): Obj;
-      /** Text. Markup: [[termId]], [[termId|shown text]], {{valId}}, {{valId:2}}, {{valId:int}}, {{valId:pct}}, **bold**. */
+      /** Text. Markup: [[termId]], [[termId|shown text]], {{valId}}, {{valId:2}}, {{valId:int}}, {{valId:pct}}, **bold**,
+       *  ‹result› (narration only: appears when the stop's animation has finished). */
       label(text: string, opts?: TextOpts): Obj;
       /** Value chip (number or string). Its width follows its text. */
       value(v: Val | number | string, opts?: TextOpts): Obj;
@@ -281,6 +288,9 @@ declare global {
       /** For objects with text (labels, values, boxes, cells, node values, chips). */
       setValue(v: Val | number | string, o?: VerbOpts): this;
       setText(text: string, o?: VerbOpts): this;
+      /** Tween SVG attributes of the main shape (or { part }): sizes, positions inside the shape, path d (morph), fill/stroke
+       *  (a role or a colour), opacity, stroke-width… e.g. bar.to({ y: -h, height: h }). */
+      to(attrs: Record<string, number | string>, o?: VerbOpts & { ease?: string; part?: string }): this;
 
       /** Continuous effects: stay on until turned off (glow(false)); other verbs keep working meanwhile. */
       glow(on?: boolean): this;
